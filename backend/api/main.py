@@ -1,7 +1,12 @@
 # Entry point for API backend
 
-def main():
-    print("Krishi Jyoti API backend running...")
+
+from fastapi import FastAPI
+from routers import advisory
+
+app = FastAPI()
+app.include_router(advisory.router)
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
