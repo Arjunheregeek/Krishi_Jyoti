@@ -1,5 +1,48 @@
+# Frontend
 node_modules/
+build/
+dist/
+.next/
+.nuxt/
+.vuepress/dist/
+
+# Backend Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
 .env
+.env.*
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+.DS_Store?
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# ML Models
+*.pkl
+*.joblib
+*.h5
+models/
+
+# Uploads
+uploads/
+temp/
+tmp/
