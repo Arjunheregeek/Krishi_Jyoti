@@ -1,0 +1,40 @@
+# Gitignore for AI directory
+
+# Virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs
+*.log
+*.txt
+
+# Data files
+*.csv
+*.json
+*.pkl
+*.h5
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# IDE settings
+.idea/
+.vscode/
+
+# Other
+.DS_Store
+Thumbs.db
