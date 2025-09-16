@@ -1,0 +1,61 @@
+{
+    "collection_name": "government_schemes",
+    "embedding_dimension": 1536,
+    "index_config": {
+        "metric_type": "COSINE",
+        "index_type": "IVF_FLAT",
+        "params": {
+            "nlist": 1024
+        }
+    },
+    "search_config": {
+        "metric_type": "COSINE",
+        "params": {
+            "nprobe": 10
+        }
+    },
+    "batch_size": 100,
+    "description": "Government Agricultural Schemes Knowledge Base for Krishi Jyoti RAG Pipeline",
+    "fields": {
+        "id": {
+            "type": "VARCHAR",
+            "max_length": 100,
+            "is_primary": true,
+            "description": "Unique node identifier from LlamaIndex"
+        },
+        "text": {
+            "type": "VARCHAR",
+            "max_length": 65535,
+            "description": "Text content of the document chunk"
+        },
+        "embedding": {
+            "type": "FLOAT_VECTOR",
+            "dimension": 1536,
+            "description": "OpenAI text-embedding-3-large vectors"
+        },
+        "metadata": {
+            "type": "JSON",
+            "description": "Additional metadata from LlamaIndex nodes"
+        },
+        "file_path": {
+            "type": "VARCHAR",
+            "max_length": 500,
+            "description": "Source file path"
+        },
+        "header_path": {
+            "type": "VARCHAR",
+            "max_length": 1000,
+            "description": "Document section hierarchy"
+        },
+        "scheme_type": {
+            "type": "VARCHAR",
+            "max_length": 100,
+            "description": "Scheme category: central, state, special"
+        },
+        "node_type": {
+            "type": "VARCHAR",
+            "max_length": 50,
+            "description": "LlamaIndex node type"
+        }
+    }
+}

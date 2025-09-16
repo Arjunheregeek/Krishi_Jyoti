@@ -6,3 +6,5 @@ openai
 cerebras-cloud-sdk
 llama-index
 llama-index-embeddings-openai
+
+llama-index-vector-stores-milvus

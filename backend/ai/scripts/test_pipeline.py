@@ -1,1 +1,0 @@
-# Generic RAG pipeline testing
