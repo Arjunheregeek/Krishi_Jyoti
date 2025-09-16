@@ -1,0 +1,4 @@
+deepgram-sdk
+pyaudio
+python-dotenv
+requests
