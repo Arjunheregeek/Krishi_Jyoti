@@ -1,10 +1,19 @@
-deepgram-sdk
-pyaudio
-python-dotenv
-requests
-openai
-cerebras-cloud-sdk
-llama-index
-llama-index-embeddings-openai
+# Core AI Dependencies
+deepgram-sdk>=3.0.0
+pyaudio>=0.2.11
+python-dotenv>=1.0.0
+requests>=2.31.0
+openai>=1.0.0
 
-llama-index-vector-stores-milvus
+# LLM and RAG Dependencies  
+cerebras-cloud-sdk>=1.0.0
+llama-index>=0.9.0
+llama-index-embeddings-openai>=0.1.0
+llama-index-vector-stores-milvus>=0.1.0
+
+# Vector Database
+pymilvus>=2.3.0
+
+# Utilities
+pydantic>=2.0.0
+httpx>=0.24.0
