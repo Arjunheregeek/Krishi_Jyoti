@@ -111,7 +111,6 @@ def main():
 
         # Shared state
         audio_buffer = bytearray()
-        file_counter = 0
         running = True
 
         # Event Handlers
@@ -124,14 +123,8 @@ def main():
                 print(f"⚠️ Audio playback error: {e}")
 
         def on_agent_audio_done(self, agent_audio_done, **kwargs):
-            nonlocal audio_buffer, file_counter
+            nonlocal audio_buffer
             print("✅ Response complete")
-            if len(audio_buffer) > 0:
-                filename = f"response-{file_counter}.wav"
-                with open(filename, 'wb') as f:
-                    f.write(create_wav_header())
-                    f.write(audio_buffer)
-                file_counter += 1
             audio_buffer = bytearray()
 
         def on_conversation_text(self, conversation_text, **kwargs):
@@ -203,27 +196,35 @@ def main():
 
         print("Press Ctrl+C to stop")
         try:
-            while True:
-                time.sleep(1)
+            while running:
+                time.sleep(0.1)
         except KeyboardInterrupt:
             print("\n👋 Stopping voice agent...")
             running = False
+            time.sleep(0.5)  # Give threads time to stop gracefully
 
         # Cleanup
-        mic_stream.stop_stream()
-        mic_stream.close()
-        speaker_stream.stop_stream()
-        speaker_stream.close()
-        audio.terminate()
-        connection.finish()
-        print("🧹 Cleanup complete")
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
         try:
+            mic_stream.stop_stream()
+            mic_stream.close()
             speaker_stream.stop_stream()
             speaker_stream.close()
             audio.terminate()
+            connection.finish()
+            print("🧹 Cleanup complete")
+        except Exception as e:
+            print(f"⚠️ Cleanup warning: {e}")
+
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        running = False
+        try:
+            mic_stream.stop_stream()
+            mic_stream.close()
+            speaker_stream.stop_stream()
+            speaker_stream.close()
+            audio.terminate()
+            connection.finish()
         except:
             pass
 
