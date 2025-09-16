@@ -1,26 +1,27 @@
 """
-Generic Zilliz Vector Database Operations
+Optimized Zilliz Vector Database Operations
 
-This module provides generic vector database operations for retrieving 
-documents from Zilliz Cloud using LlamaIndex integration.
+This module provides high-performance vector database operations for retrieving 
+documents from Zilliz Cloud using LlamaIndex integration with connection pooling.
 
 Key Features:
-- Domain-agnostic vector retrieval
-- LlamaIndex integration for seamless querying
-- Configurable similarity search parameters
-- Error handling and connection management
-- Support for different embedding dimensions
+- Persistent connection pooling for zero-latency queries
+- Pre-initialized embedding models and vector stores
+- Singleton pattern for connection reuse
+- Optimized for high-frequency RAG operations
+- Error handling with connection recovery
 
 Usage:
-    from services.vector_service import VectorRetriever
+    from services.vector_service import get_fast_retriever
     
-    retriever = VectorRetriever(collection_name="your_collection")
+    retriever = get_fast_retriever("your_collection")
     results = retriever.search("your query", top_k=5)
 """
 
 import os
 import logging
-from typing import List, Optional, Dict, Any
+import threading
+from typing import List, Optional, Dict, Any, ClassVar
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,13 +32,193 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from pymilvus import MilvusClient
 from pymilvus.exceptions import MilvusException
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Suppress verbose logging for performance
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("pymilvus").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
+class FastVectorRetriever:
+    """
+    High-performance vector retrieval with persistent connections and connection pooling.
+    
+    This class maintains persistent connections and pre-initialized components
+    to minimize latency for RAG operations.
+    """
+    
+    _instances: ClassVar[Dict[str, 'FastVectorRetriever']] = {}
+    _lock = threading.Lock()
+    
+    def __init__(self, collection_name: str, embedding_dim: int = 3072, 
+                 similarity_top_k: int = 3):
+        """
+        Initialize the fast vector retriever with persistent connections.
+        
+        Args:
+            collection_name: Name of the Zilliz collection
+            embedding_dim: Dimension of the embeddings (default: 3072)
+            similarity_top_k: Number of similar documents to retrieve
+        """
+        self.collection_name = collection_name
+        self.embedding_dim = embedding_dim
+        self.similarity_top_k = similarity_top_k
+        
+        # Get environment variables
+        self.zilliz_uri = os.getenv("ZILLIZ_CLOUD_URI")
+        self.zilliz_token = os.getenv("ZILLIZ_CLOUD_TOKEN")
+        
+        if not self.zilliz_uri or not self.zilliz_token:
+            raise ValueError("ZILLIZ_CLOUD_URI and ZILLIZ_CLOUD_TOKEN must be set in .env")
+        
+        # Persistent connections - initialized once
+        self.milvus_client = None
+        self.vector_store = None
+        self.index = None
+        self.retriever = None
+        self._connected = False
+        
+        # Initialize immediately for zero-latency queries
+        self._initialize_connections()
+    
+    def _initialize_connections(self) -> bool:
+        """
+        Initialize all connections and components once for reuse.
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            if self._connected:
+                return True
+                
+            # Initialize Milvus Client once
+            self.milvus_client = MilvusClient(uri=self.zilliz_uri, token=self.zilliz_token)
+            
+            # Verify and load collection
+            if not self.milvus_client.has_collection(self.collection_name):
+                raise ValueError(f"Collection '{self.collection_name}' does not exist")
+            
+            self.milvus_client.load_collection(self.collection_name)
+            
+            # Configure embedding model once
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY must be set in .env")
+            
+            # Pre-initialize embedding model for reuse
+            embed_model = OpenAIEmbedding(
+                model="text-embedding-3-large",
+                dimensions=self.embedding_dim,
+                api_key=openai_api_key
+            )
+            
+            Settings.embed_model = embed_model
+            
+            # Initialize Vector Store once
+            self.vector_store = MilvusVectorStore(
+                uri=self.zilliz_uri,
+                token=self.zilliz_token,
+                collection_name=self.collection_name,
+                dim=self.embedding_dim
+            )
+            
+            # Load index once and keep in memory
+            self.index = VectorStoreIndex.from_vector_store(self.vector_store)
+            
+            # Create persistent retriever
+            self.retriever = self.index.as_retriever(similarity_top_k=self.similarity_top_k)
+            
+            self._connected = True
+            logger.info(f"FastVectorRetriever initialized for {self.collection_name} - Ready for zero-latency queries")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize connections: {str(e)}")
+            self._connected = False
+            return False
+    
+    def search(self, query: str, top_k: Optional[int] = None) -> List[NodeWithScore]:
+        """
+        Perform ultra-fast vector similarity search using persistent connections.
+        
+        Args:
+            query: Search query text
+            top_k: Number of results to return (optional, uses default if not provided)
+            
+        Returns:
+            List of NodeWithScore objects containing matching documents and scores
+        """
+        try:
+            # Ensure connection is active
+            if not self._connected:
+                if not self._initialize_connections():
+                    raise RuntimeError("Failed to establish connection to Zilliz Cloud")
+            
+            # Use custom top_k if provided, otherwise use persistent retriever
+            if top_k and top_k != self.similarity_top_k:
+                retriever = self.index.as_retriever(similarity_top_k=top_k)
+            else:
+                retriever = self.retriever
+            
+            # Ultra-fast search using persistent connections
+            results = retriever.retrieve(query)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Search error: {str(e)}")
+            # Attempt reconnection on error
+            self._connected = False
+            if self._initialize_connections():
+                return self.search(query, top_k)  # Retry once
+            raise
+    
+    def get_collection_stats(self) -> Dict[str, Any]:
+        """Get collection statistics."""
+        if not self._connected:
+            if not self._initialize_connections():
+                raise RuntimeError("Failed to establish connection")
+        
+        try:
+            return self.milvus_client.get_collection_stats(self.collection_name)
+        except Exception as e:
+            logger.error(f"Error getting collection stats: {str(e)}")
+            raise
+    
+    def is_connected(self) -> bool:
+        """Check if retriever is connected and ready."""
+        return self._connected
+    
+    @classmethod
+    def get_instance(cls, collection_name: str, embedding_dim: int = 3072, 
+                    similarity_top_k: int = 3) -> 'FastVectorRetriever':
+        """
+        Get singleton instance for the given collection (connection pooling).
+        
+        Args:
+            collection_name: Name of the Zilliz collection
+            embedding_dim: Dimension of the embeddings
+            similarity_top_k: Number of similar documents to retrieve
+            
+        Returns:
+            Singleton FastVectorRetriever instance
+        """
+        key = f"{collection_name}_{embedding_dim}_{similarity_top_k}"
+        
+        if key not in cls._instances:
+            with cls._lock:
+                if key not in cls._instances:
+                    cls._instances[key] = cls(collection_name, embedding_dim, similarity_top_k)
+        
+        return cls._instances[key]
+
+
+# Legacy VectorRetriever class kept for backward compatibility
 class VectorRetriever:
     """
     Generic vector retrieval service for Zilliz Cloud using LlamaIndex.
@@ -218,10 +399,31 @@ class VectorRetriever:
                 logger.warning(f"Error closing connection: {str(e)}")
 
 
+def get_fast_retriever(collection_name: str, embedding_dim: int = 3072, 
+                      similarity_top_k: int = 3) -> FastVectorRetriever:
+    """
+    Get ultra-fast vector retriever with persistent connections (RECOMMENDED).
+    
+    This function returns a singleton instance that maintains persistent connections
+    for zero-latency vector searches. Perfect for RAG applications.
+    
+    Args:
+        collection_name: Name of the Zilliz collection
+        embedding_dim: Dimension of the embeddings
+        similarity_top_k: Number of similar documents to retrieve
+        
+    Returns:
+        FastVectorRetriever instance with persistent connections
+    """
+    return FastVectorRetriever.get_instance(collection_name, embedding_dim, similarity_top_k)
+
+
 def create_vector_retriever(collection_name: str, embedding_dim: int = 3072, 
                           similarity_top_k: int = 3) -> VectorRetriever:
     """
-    Factory function to create and connect a VectorRetriever instance.
+    LEGACY: Factory function to create and connect a VectorRetriever instance.
+    
+    NOTE: Use get_fast_retriever() instead for better performance in RAG applications.
     
     Args:
         collection_name: Name of the Zilliz collection
