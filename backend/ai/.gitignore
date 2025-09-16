@@ -15,15 +15,18 @@ __pycache__/
 
 # Logs
 *.log
-*.txt
 
-# Data files
+# Data files (excluding embeddings)
 *.csv
-*.json
 *.pkl
 *.h5
 *.db
 *.sqlite3
+
+# Allow embeddings and model files
+!models/embeddings/**/*.json
+!models/embeddings/**/*.txt
+!models/embeddings/**/
 
 # Temporary files
 *.tmp

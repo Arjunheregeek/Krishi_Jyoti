@@ -2,3 +2,7 @@ deepgram-sdk
 pyaudio
 python-dotenv
 requests
+openai
+cerebras-cloud-sdk
+llama-index
+llama-index-embeddings-openai

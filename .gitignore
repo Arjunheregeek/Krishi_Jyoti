@@ -41,6 +41,8 @@ logs/
 *.joblib
 *.h5
 models/
+# Allow embeddings in AI backend
+!backend/ai/models/embeddings/
 
 # Uploads
 uploads/
