@@ -67,9 +67,11 @@ Analyze the user query and respond with ONLY ONE of these:
 - "SIMPLE" - for greetings, thanks, general chat, or questions that don't need scheme details
 - "RAG_NEEDED" - for questions about specific schemes, benefits, eligibility, applications, or detailed information
 
+Do NOT use any markdown characters like asterisks (*), backticks (`), or hash symbols (#).
+
 Examples:
 - "Hello" → SIMPLE
-- "Thank you" → SIMPLE  
+- "Thank you" → SIMPLE
 - "What is PM-KISAN?" → RAG_NEEDED
 - "How to apply for crop insurance?" → RAG_NEEDED
 - "What schemes help farmers?" → RAG_NEEDED
@@ -90,11 +92,8 @@ Create 3-4 enhanced search queries that will help retrieve ALL relevant informat
 - Application process and required documents
 - Deadlines and contact information
 
-Format your response as a simple list, one query per line:
-- Enhanced query 1
-- Enhanced query 2  
-- Enhanced query 3
-- Enhanced query 4
+Format your response as a simple list, one query per line.
+Do NOT use any markdown characters like asterisks (*), backticks (`), or hash symbols (#).
 
 Enhanced Queries:"""
 
