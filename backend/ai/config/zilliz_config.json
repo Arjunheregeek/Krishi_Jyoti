@@ -1,6 +1,6 @@
 {
-    "collection_name": "government_schemes",
-    "embedding_dimension": 1536,
+    "collection_name": "government_schemes_knowledge_base",
+    "embedding_dimension": 3072,
     "index_config": {
         "metric_type": "COSINE",
         "index_type": "IVF_FLAT",
@@ -30,8 +30,8 @@
         },
         "embedding": {
             "type": "FLOAT_VECTOR",
-            "dimension": 1536,
-            "description": "OpenAI text-embedding-3-large vectors"
+            "dimension": 3072,
+            "description": "3072-dimensional embedding vectors"
         },
         "metadata": {
             "type": "JSON",
