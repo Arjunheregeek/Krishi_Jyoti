@@ -70,16 +70,49 @@ def main():
         options.agent.listen.provider.model = "nova-2"
         options.agent.think.provider.type = "open_ai"
         options.agent.think.provider.model = "gpt-4o-mini"
+        
         options.agent.think.prompt = (
-            "You are a helpful farming assistant for Krishi Jyoti. "
-            "Give practical advice about crops, soil, and farming techniques. "
-            "Keep responses short and actionable."
+            "You are 'MSP Mitra,' an expert AI assistant from Krishi Jyoti. "
+            "Your sole purpose is to provide Minimum Support Price (MSP) information based on the data provided below. "
+            "You must only use the following data to answer questions. If a crop is not in this data, state that you do not have the information for that crop. "
+            "Response Style: Provide answers in plain text only. Do not use any special characters like asterisks or markdown formatting. State the MSP per quintal. "
+            "\n"
+            "--- MSP Data for 2025-26 ---\n"
+            "Paddy (Common): 2369\n"
+            "Paddy (Grade 'A'): 2389\n"
+            "Jowar (Hybrid): 3699\n"
+            "Jowar (Maldandi): 3749\n"
+            "Bajra: 2775\n"
+            "Ragi: 4886\n"
+            "Maize: 2400\n"
+            "Arhar: 8000\n"
+            "Moong: 8768\n"
+            "Urad: 7800\n"
+            "Cotton (Medium Staple): 7710\n"
+            "Cotton (Long Staple): 8110\n"
+            "Groundnut: 7263\n"
+            "Sunflower Seed: 7721\n"
+            "Soyabean Yellow: 5328\n"
+            "Sesamum: 9846\n"
+            "Nigerseed: 9537\n"
+            "Wheat: 2425\n"
+            "Barley: 1980\n"
+            "Gram: 5650\n"
+            "Masur (Lentil): 6700\n"
+            "Rapeseed & mustard: 5950\n"
+            "Safflower: 5940\n"
+            "Jute: 5650\n"
+            "Copra (milling): 11582\n"
+            "Copra (ball): 12100\n"
+            "--- End of Data ---"
         )
+        
         options.agent.speak.provider.type = "deepgram"
         options.agent.speak.provider.model = "aura-asteria-en"
+        
         options.agent.greeting = (
-            "Hello! I'm your Krishi Jyoti farming assistant. "
-            "How can I help with your farm today?"
+            "Hello, I am MSP Mitra from Krishi Jyoti. "
+            "You can ask me for the current Minimum Support Price of any major crop."
         )
 
         # Setup PyAudio
@@ -100,7 +133,6 @@ def main():
         )
         print("🔊 Audio setup complete")
 
-        # Keep-alive sender
         def send_keep_alive():
             while True:
                 time.sleep(5)
@@ -109,7 +141,6 @@ def main():
         keep_alive_thread = threading.Thread(target=send_keep_alive, daemon=True)
         keep_alive_thread.start()
 
-        # Shared state
         audio_buffer = bytearray()
         running = True
 
@@ -128,6 +159,10 @@ def main():
             audio_buffer = bytearray()
 
         def on_conversation_text(self, conversation_text, **kwargs):
+            # This filter is a safeguard against repetition.
+            if 'History' in str(conversation_text):
+                return
+                
             try:
                 role = getattr(conversation_text, 'role', 'unknown')
                 content = getattr(conversation_text, 'content', str(conversation_text))
@@ -153,10 +188,16 @@ def main():
         def on_error(self, error, **kwargs):
             print(f"❌ Error: {error}")
 
+        # This handler now silently ignores History events.
+        def on_unhandled(self, unhandled, **kwargs):
+            if hasattr(unhandled, 'raw') and '"type":"History"' in str(unhandled.raw):
+                return # Silently ignore the message
+            # Optionally log other unknown messages if needed for debugging
+            # print(f"🤷 Unknown Message: {unhandled}")
+
         def on_settings_applied(self, settings_applied, **kwargs): pass
         def on_agent_thinking(self, agent_thinking, **kwargs): pass
         def on_close(self, close, **kwargs): pass
-        def on_unhandled(self, unhandled, **kwargs): pass
 
         # Register handlers
         connection.on(AgentWebSocketEvents.AudioData, on_audio_data)
@@ -178,7 +219,6 @@ def main():
             return
         print("✅ WebSocket connection started successfully")
 
-        # Stream microphone audio
         def stream_microphone():
             nonlocal running
             while running:
@@ -201,7 +241,7 @@ def main():
         except KeyboardInterrupt:
             print("\n👋 Stopping voice agent...")
             running = False
-            time.sleep(0.5)  # Give threads time to stop gracefully
+            time.sleep(0.5)
 
         # Cleanup
         try:
@@ -217,16 +257,6 @@ def main():
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
-        running = False
-        try:
-            mic_stream.stop_stream()
-            mic_stream.close()
-            speaker_stream.stop_stream()
-            speaker_stream.close()
-            audio.terminate()
-            connection.finish()
-        except:
-            pass
 
 if __name__ == "__main__":
     main()
