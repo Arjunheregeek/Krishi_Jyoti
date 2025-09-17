@@ -1,535 +1,531 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Gift, Calendar, Users, Target, ArrowRight, CheckCircle, Search, Filter, Calculator } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { 
+  MessageSquare, 
+  Send, 
+  Bot, 
+  User, 
+  Gift, 
+  Calculator,
+  FileText,
+  HelpCircle,
+  Sparkles,
+  Clock,
+  CheckCircle
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface SubsidiesProps {
   currentLanguage: string;
 }
 
-interface SubsidyScheme {
+interface ChatMessage {
+  id: string;
+  text: string;
+  sender: 'user' | 'bot';
+  timestamp: Date;
+  type?: 'text' | 'subsidy-info' | 'calculation' | 'application-help';
+}
+
+interface SubsidyInfo {
   name: string;
-  description: string;
-  subsidyPercent: number;
-  maxAmount: string;
+  amount: string;
   eligibility: string[];
   documents: string[];
   deadline?: string;
-  beneficiaries: number;
-  category: 'pesticide' | 'fertilizer' | 'seeds' | 'equipment' | 'irrigation';
-  status: 'active' | 'closing-soon' | 'upcoming';
 }
 
-const subsidySchemes: SubsidyScheme[] = [
-  {
-    name: 'Pesticide Subsidy Scheme',
-    description: 'Financial assistance for purchasing organic and bio-pesticides to promote sustainable farming',
-    subsidyPercent: 50,
-    maxAmount: '₹10,000',
-    eligibility: ['Small & Marginal farmers', 'Certified organic farmers', 'FPO members'],
-    documents: ['Aadhaar Card', 'Land Records', 'Bank Details', 'Previous purchase bills'],
-    deadline: '2024-12-31',
-    beneficiaries: 2456,
-    category: 'pesticide',
-    status: 'active'
-  },
-  {
-    name: 'Organic Fertilizer Promotion',
-    description: 'Subsidy on vermicompost, organic fertilizers, and bio-fertilizers',
-    subsidyPercent: 75,
-    maxAmount: '₹15,000',
-    eligibility: ['All category farmers', 'Organic certification holders'],
-    documents: ['Farmer ID', 'Soil health card', 'Purchase receipts'],
-    deadline: '2025-01-15',
-    beneficiaries: 3241,
-    category: 'fertilizer',
-    status: 'active'
-  },
-  {
-    name: 'Quality Seed Distribution',
-    description: 'Subsidized high-yielding variety seeds and hybrid seeds for better productivity',
-    subsidyPercent: 85,
-    maxAmount: '₹5,000',
-    eligibility: ['BPL farmers', 'Women farmers', 'SC/ST farmers'],
-    documents: ['BPL Card', 'Caste certificate (if applicable)', 'Land documents'],
-    beneficiaries: 5678,
-    category: 'seeds',
-    status: 'closing-soon'
-  },
-  {
-    name: 'Drip Irrigation Subsidy',
-    description: 'Financial support for installing micro-irrigation systems to promote water conservation',
-    subsidyPercent: 55,
-    maxAmount: '₹50,000',
-    eligibility: ['Farmers with >1 acre land', 'Water availability certificate'],
-    documents: ['Land records', 'Water source proof', 'Technical approval'],
-    deadline: '2024-11-30',
-    beneficiaries: 1892,
-    category: 'irrigation',
-    status: 'closing-soon'
-  }
-];
-
-const categoryIcons = {
-  pesticide: '🌿',
-  fertilizer: '🧪', 
-  seeds: '🌱',
-  equipment: '🚜',
-  irrigation: '💧'
-};
-
-const categoryColors = {
-  pesticide: 'bg-primary/10 text-primary',
-  fertilizer: 'bg-secondary/10 text-secondary',
-  seeds: 'bg-success/10 text-success',
-  equipment: 'bg-accent/10 text-accent',
-  irrigation: 'bg-primary/10 text-primary'
-};
-
-const statusColors = {
-  active: 'bg-success/10 text-success',
-  'closing-soon': 'bg-warning/10 text-warning',
-  upcoming: 'bg-accent/10 text-accent'
-};
-
 const Subsidies = ({ currentLanguage }: SubsidiesProps) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [budget, setBudget] = useState<string>('');
-  const [showCalculator, setShowCalculator] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const translations = {
     en: {
-      title: 'Government Subsidies',
-      description: 'Access financial assistance for pesticides, fertilizers, seeds, and farming equipment',
-      search: 'Search subsidies by name or description...',
-      category: 'Category',
-      status: 'Status',
-      calculator: 'Calculator',
-      subsidyCalculator: 'Subsidy Calculator',
-      calculateBenefits: 'Calculate potential benefits for your investment',
-      investmentAmount: 'Investment Amount (₹)',
-      potentialBenefits: 'Potential Benefits:',
-      activeSchemes: 'Active Schemes',
-      totalBeneficiaries: 'Total Beneficiaries',
-      avgSubsidy: 'Avg Subsidy',
-      amountDisbursed: 'Amount Disbursed',
-      subsidyRate: 'Subsidy Rate',
-      maxAmount: 'Max Amount',
-      beneficiaries: 'Beneficiaries',
-      applicationDeadline: 'Application Deadline',
-      eligibilityCriteria: 'Eligibility Criteria',
-      viewDetails: 'View Details',
-      applyNow: 'Apply Now',
-      comingSoon: 'Coming Soon',
-      getApplicationHelp: 'Get Application Help',
-      downloadForms: 'Download Forms',
-      needHelp: 'Need Help with Applications?',
-      fieldOfficersHelp: 'Our field officers are available to assist you with subsidy applications and documentation'
+      title: 'Subsidies Assistant',
+      subtitle: 'Get instant help with government subsidies, eligibility, and applications',
+      placeholder: 'Ask about subsidies, eligibility, application process...',
+      send: 'Send',
+      typing: 'Assistant is typing...',
+      welcomeMessage: 'Hello! I\'m your Subsidies Assistant. I can help you with information about government subsidies, check your eligibility, calculate potential benefits, and guide you through the application process. What would you like to know?',
+      quickActions: 'Quick Actions',
+      checkEligibility: 'Check Eligibility',
+      calculateBenefits: 'Calculate Benefits',
+      applicationHelp: 'Application Help',
+      viewSchemes: 'View All Schemes',
+      recentQueries: 'Recent Queries',
+      popularTopics: 'Popular Topics',
+      pesticidesSubsidy: 'Pesticides Subsidy',
+      fertilizerSubsidy: 'Fertilizer Subsidy',
+      seedsSubsidy: 'Seeds Subsidy',
+      equipmentSubsidy: 'Equipment Subsidy',
+      howToApply: 'How to Apply',
+      requiredDocuments: 'Required Documents',
+      processingTime: 'Processing Time',
+      contactSupport: 'Contact Support'
     },
     hi: {
-      title: 'सरकारी सब्सिडी',
-      description: 'कीटनाशक, उर्वरक, बीज और कृषि उपकरणों के लिए वित्तीय सहायता प्राप्त करें',
-      search: 'नाम या विवरण के द्वारा सब्सिडी खोजें...',
-      category: 'श्रेणी',
-      status: 'स्थिति',
-      calculator: 'कैलकुलेटर',
-      subsidyCalculator: 'सब्सिडी कैलकुलेटर',
-      calculateBenefits: 'अपने निवेश के लिए संभावित लाभों की गणना करें',
-      investmentAmount: 'निवेश राशि (₹)',
-      potentialBenefits: 'संभावित लाभ:',
-      activeSchemes: 'सक्रिय योजनाएं',
-      totalBeneficiaries: 'कुल लाभार्थी',
-      avgSubsidy: 'औसत सब्सिडी',
-      amountDisbursed: 'वितरित राशि',
-      subsidyRate: 'सब्सिडी दर',
-      maxAmount: 'अधिकतम राशि',
-      beneficiaries: 'लाभार्थी',
-      applicationDeadline: 'आवेदन की अंतिम तारीख',
-      eligibilityCriteria: 'पात्रता मानदंड',
-      viewDetails: 'विवरण देखें',
-      applyNow: 'अब आवेदन करें',
-      comingSoon: 'जल्द आ रहा है',
-      getApplicationHelp: 'आवेदन सहायता पाएं',
-      downloadForms: 'फॉर्म डाउनलोड करें',
-      needHelp: 'आवेदन में सहायता चाहिए?',
-      fieldOfficersHelp: 'हमारे फील्ड ऑफिसर सब्सिडी आवेदन और दस्तावेजों में आपकी सहायता के लिए उपलब्ध हैं'
+      title: 'सब्सिडी सहायक',
+      subtitle: 'सरकारी सब्सिडी, पात्रता और आवेदनों के साथ तत्काल सहायता प्राप्त करें',
+      placeholder: 'सब्सिडी, पात्रता, आवेदन प्रक्रिया के बारे में पूछें...',
+      send: 'भेजें',
+      typing: 'सहायक टाइप कर रहा है...',
+      welcomeMessage: 'नमस्ते! मैं आपका सब्सिडी सहायक हूं। मैं सरकारी सब्सिडी की जानकारी, आपकी पात्रता की जांच, संभावित लाभों की गणना और आवेदन प्रक्रिया में आपकी मदद कर सकता हूं। आप क्या जानना चाहते हैं?',
+      quickActions: 'त्वरित कार्य',
+      checkEligibility: 'पात्रता जांचें',
+      calculateBenefits: 'लाभों की गणना करें',
+      applicationHelp: 'आवेदन सहायता',
+      viewSchemes: 'सभी योजनाएं देखें',
+      recentQueries: 'हाल की पूछताछ',
+      popularTopics: 'लोकप्रिय विषय',
+      pesticidesSubsidy: 'कीटनाशक सब्सिडी',
+      fertilizerSubsidy: 'उर्वरक सब्सिडी',
+      seedsSubsidy: 'बीज सब्सिडी',
+      equipmentSubsidy: 'उपकरण सब्सिडी',
+      howToApply: 'आवेदन कैसे करें',
+      requiredDocuments: 'आवश्यक दस्तावेज',
+      processingTime: 'प्रसंस्करण समय',
+      contactSupport: 'सहायता से संपर्क करें'
     },
     te: {
-      title: 'ప్రభుత్వ రాజసహాయం',
-      description: 'పురుగుమందులు, ఎరువులు, విత్తనాలు మరియు వ్యవసాయ పరికరాలకు ఆర్థిక సహాయం పొందండి',
-      search: 'పేరు లేదా వివరణ ద్వారా రాజసహాయాలను వెతకండి...',
-      category: 'వర్గం',
-      status: 'స్థితి',
-      calculator: 'కాలిక్యులేటర్',
-      subsidyCalculator: 'రాజసహాయ కాలిక్యులేటర్',
-      calculateBenefits: 'మీ పెట్టుబడికి సంభావ్య ప్రయోజనాలను లెక్కించండి',
-      investmentAmount: 'పెట్టుబడి మొత్తం (₹)',
-      potentialBenefits: 'సంభావ్య ప్రయోజనాలు:',
-      activeSchemes: 'సక్రియ పథకాలు',
-      totalBeneficiaries: 'మొత్తం లబ్ధిదారులు',
-      avgSubsidy: 'సగటు రాజసహాయం',
-      amountDisbursed: 'పంపిణీ చేసిన మొత్తం',
-      subsidyRate: 'రాజసహాయ రేటు',
-      maxAmount: 'గరిష్ట మొత్తం',
-      beneficiaries: 'లబ్ధిదారులు',
-      applicationDeadline: 'దరఖాస్తు గడువు',
-      eligibilityCriteria: 'అర్హత ప్రమాణాలు',
-      viewDetails: 'వివరాలు చూడండి',
-      applyNow: 'ఇప్పుడు దరఖాస్తు చేసుకోండి',
-      comingSoon: 'త్వరలో వస్తుంది',
-      getApplicationHelp: 'దరఖాస్తు సహాయం పొందండి',
-      downloadForms: 'ఫారమ్‌లను డౌన్‌లోడ్ చేయండి',
-      needHelp: 'దరఖాస్తులతో సహాయం కావాలా?',
-      fieldOfficersHelp: 'మా క్షేత్ర అధికారులు రాజసహాయ దరఖాస్తులు మరియు పత్రాలతో మీకు సహాయం చేయడానికి అందుబాటులో ఉన్నారు'
+      title: 'సబ్సిడీ సహాయకుడు',
+      subtitle: 'ప్రభుత్వ సబ్సిడీలు, అర్హత మరియు దరఖాస్తులతో తక్షణ సహాయం పొందండి',
+      placeholder: 'సబ్సిడీలు, అర్హత, దరఖాస్తు ప్రక్రియ గురించి అడగండి...',
+      send: 'పంపండి',
+      typing: 'సహాయకుడు టైప్ చేస్తున్నాడు...',
+      welcomeMessage: 'హలో! నేను మీ సబ్సిడీ సహాయకుడిని. ప్రభుత్వ సబ్సిడీల సమాచారం, మీ అర్హత తనిఖీ, సంభావ్య ప్రయోజనాల లెక్కింపు మరియు దరఖాస్తు ప్రక్రియలో మీకు సహాయం చేయగలను. మీరు ఏమి తెలుసుకోవాలనుకుంటున్నారు?',
+      quickActions: 'త్వరిత చర్యలు',
+      checkEligibility: 'అర్హత తనిఖీ చేయండి',
+      calculateBenefits: 'ప్రయోజనాలను లెక్కించండి',
+      applicationHelp: 'దరఖాస్తు సహాయం',
+      viewSchemes: 'అన్ని పథకాలు చూడండి',
+      recentQueries: 'ఇటీవలి ప్రశ్నలు',
+      popularTopics: 'ప్రసిద్ధ అంశాలు',
+      pesticidesSubsidy: 'పురుగుమందుల సబ్సిడీ',
+      fertilizerSubsidy: 'ఎరువుల సబ్సిడీ',
+      seedsSubsidy: 'విత్తనాల సబ్సిడీ',
+      equipmentSubsidy: 'పరికరాల సబ్సిడీ',
+      howToApply: 'ఎలా దరఖాస్తు చేసుకోవాలి',
+      requiredDocuments: 'అవసరమైన పత్రాలు',
+      processingTime: 'ప్రాసెసింగ్ సమయం',
+      contactSupport: 'మద్దతును సంప్రదించండి'
     },
     ta: {
-      title: 'அரசு மானியங்கள்',
-      description: 'பூச்சிக்கொல்லிகள், உரங்கள், விதைகள் மற்றும் விவசாய உபகரணங்களுக்கு நிதி உதவி பெறுங்கள்',
-      search: 'பெயர் அல்லது விளக்கத்தின் மூலம் மானியங்களைத் தேடுங்கள்...',
-      category: 'வகை',
-      status: 'நிலை',
-      calculator: 'கால்குலேட்டர்',
-      subsidyCalculator: 'மானிய கால்குலேட்டர்',
-      calculateBenefits: 'உங்கள் முதலீட்டிற்கான சாத்தியமான பலன்களைக் கணக்கிடுங்கள்',
-      investmentAmount: 'முதலீட்டு தொகை (₹)',
-      potentialBenefits: 'சாத்தியமான பலன்கள்:',
-      activeSchemes: 'செயலில் உள்ள திட்டங்கள்',
-      totalBeneficiaries: 'மொத்த பயனாளிகள்',
-      avgSubsidy: 'சராசரி மானியம்',
-      amountDisbursed: 'வழங்கப்பட்ட தொகை',
-      subsidyRate: 'மானிய விகிதம்',
-      maxAmount: 'அதிகபட்ச தொகை',
-      beneficiaries: 'பயனாளிகள்',
-      applicationDeadline: 'விண்ணப்ப கடைசி நாள்',
-      eligibilityCriteria: 'தகுதி அளவுகோல்கள்',
-      viewDetails: 'விவரங்களைப் பார்க்கவும்',
-      applyNow: 'இப்போது விண்ணப்பிக்கவும்',
-      comingSoon: 'விரைவில் வரும்',
-      getApplicationHelp: 'விண்ணப்ப உதவி பெறுங்கள்',
-      downloadForms: 'படிவங்களைப் பதிவிறக்கவும்',
-      needHelp: 'விண்ணப்பங்களில் உதவி தேவையா?',
-      fieldOfficersHelp: 'எங்கள் கள அதிகாரிகள் மானிய விண்ணப்பங்கள் மற்றும் ஆவணங்களில் உங்களுக்கு உதவ கிடைக்கின்றனர்'
+      title: 'மானிய உதவியாளர்',
+      subtitle: 'அரசு மானியங்கள், தகுதி மற்றும் விண்ணப்பங்களுடன் உடனடி உதவி பெறுங்கள்',
+      placeholder: 'மானியங்கள், தகுதி, விண்ணப்ப செயல்முறை பற்றி கேளுங்கள்...',
+      send: 'அனுப்பு',
+      typing: 'உதவியாளர் தட்டச்சு செய்கிறார்...',
+      welcomeMessage: 'வணக்கம்! நான் உங்கள் மானிய உதவியாளர். அரசு மானியங்கள் பற்றிய தகவல்கள், உங்கள் தகுதியை சரிபார்த்தல், சாத்தியமான பலன்களைக் கணக்கிடுதல் மற்றும் விண்ணப்ப செயல்முறையில் உங்களுக்கு உதவ முடியும். நீங்கள் என்ன தெரிந்து கொள்ள விரும்புகிறீர்கள்?',
+      quickActions: 'விரைவு செயல்கள்',
+      checkEligibility: 'தகுதியை சரிபார்க்கவும்',
+      calculateBenefits: 'பலன்களைக் கணக்கிடுங்கள்',
+      applicationHelp: 'விண்ணப்ப உதவி',
+      viewSchemes: 'அனைத்து திட்டங்களையும் பார்க்கவும்',
+      recentQueries: 'சமீபத்திய கேள்விகள்',
+      popularTopics: 'பிரபலமான தலைப்புகள்',
+      pesticidesSubsidy: 'பூச்சிக்கொல்லி மானியம்',
+      fertilizerSubsidy: 'உர மானியம்',
+      seedsSubsidy: 'விதை மானியம்',
+      equipmentSubsidy: 'உபகரண மானியம்',
+      howToApply: 'எப்படி விண்ணப்பிக்க வேண்டும்',
+      requiredDocuments: 'தேவையான ஆவணங்கள்',
+      processingTime: 'செயலாக்க நேரம்',
+      contactSupport: 'ஆதரவைத் தொடர்பு கொள்ளுங்கள்'
     },
     ml: {
-      title: 'സർക്കാർ സബ്സിഡികൾ',
-      description: 'കീടനാശിനികൾ, വളങ്ങൾ, വിത്തുകൾ, കാർഷിക ഉപകരണങ്ങൾ എന്നിവയ്ക്കായി സാമ്പത്തിക സഹായം നേടുക',
-      search: 'പേര് അല്ലെങ്കിൽ വിവരണം ഉപയോഗിച്ച് സബ്സിഡികൾ തിരയുക...',
-      category: 'വിഭാഗം',
-      status: 'സ്ഥിതി',
-      calculator: 'കാൽക്കുലേറ്റർ',
-      subsidyCalculator: 'സബ്സിഡി കാൽക്കുലേറ്റർ',
-      calculateBenefits: 'നിങ്ങളുടെ നിക്ഷേപത്തിനുള്ള സാധ്യതയുള്ള നേട്ടങ്ങൾ കണക്കാക്കുക',
-      investmentAmount: 'നിക്ഷേപ തുക (₹)',
-      potentialBenefits: 'സാധ്യതയുള്ള നേട്ടങ്ങൾ:',
-      activeSchemes: 'സജീവ പദ്ധതികൾ',
-      totalBeneficiaries: 'മൊത്തം ഗുണഭോക്താക്കൾ',
-      avgSubsidy: 'ശരാശരി സബ്സിഡി',
-      amountDisbursed: 'വിതരണം ചെയ്ത തുക',
-      subsidyRate: 'സബ്സിഡി നിരക്ക്',
-      maxAmount: 'പരമാവധി തുക',
-      beneficiaries: 'ഗുണഭോക്താക്കൾ',
-      applicationDeadline: 'അപേക്ഷാ അവസാന തീയതി',
-      eligibilityCriteria: 'യോഗ്യതാ മാനദണ്ഡങ്ങൾ',
-      viewDetails: 'വിവരങ്ങൾ കാണുക',
-      applyNow: 'ഇപ്പോൾ അപേക്ഷിക്കുക',
-      comingSoon: 'ഉടൻ വരുന്നു',
-      getApplicationHelp: 'അപേക്ഷാ സഹായം നേടുക',
-      downloadForms: 'ഫോമുകൾ ഡൗൺലോഡ് ചെയ്യുക',
-      needHelp: 'അപേക്ഷകളിൽ സഹായം വേണോ?',
-      fieldOfficersHelp: 'ഞങ്ങളുടെ ഫീൽഡ് ഓഫീസർമാർ സബ്സിഡി അപേക്ഷകളിലും ഡോക്യുമെന്റേഷനിലും നിങ്ങളെ സഹായിക്കാൻ ലഭ്യമാണ്'
+      title: 'സബ്സിഡി സഹായി',
+      subtitle: 'സർക്കാർ സബ്സിഡികൾ, യോഗ്യത, അപേക്ഷകൾ എന്നിവയിൽ തൽക്ഷണ സഹായം നേടുക',
+      placeholder: 'സബ്സിഡികൾ, യോഗ്യത, അപേക്ഷാ പ്രക്രിയ എന്നിവയെക്കുറിച്ച് ചോദിക്കുക...',
+      send: 'അയയ്ക്കുക',
+      typing: 'സഹായി ടൈപ്പ് ചെയ്യുന്നു...',
+      welcomeMessage: 'ഹലോ! ഞാൻ നിങ്ങളുടെ സബ്സിഡി സഹായിയാണ്. സർക്കാർ സബ്സിഡികളെക്കുറിച്ചുള്ള വിവരങ്ങൾ, നിങ്ങളുടെ യോഗ്യത പരിശോധിക്കൽ, സാധ്യതയുള്ള നേട്ടങ്ങൾ കണക്കാക്കൽ, അപേക്ഷാ പ്രക്രിയയിൽ നിങ്ങളെ സഹായിക്കാൻ എനിക്ക് കഴിയും. നിങ്ങൾ എന്താണ് അറിയാൻ ആഗ്രഹിക്കുന്നത്?',
+      quickActions: 'പെട്ടെന്നുള്ള പ്രവർത്തനങ്ങൾ',
+      checkEligibility: 'യോഗ്യത പരിശോധിക്കുക',
+      calculateBenefits: 'നേട്ടങ്ങൾ കണക്കാക്കുക',
+      applicationHelp: 'അപേക്ഷാ സഹായം',
+      viewSchemes: 'എല്ലാ പദ്ധതികളും കാണുക',
+      recentQueries: 'സമീപകാല ചോദ്യങ്ങൾ',
+      popularTopics: 'ജനപ്രിയ വിഷയങ്ങൾ',
+      pesticidesSubsidy: 'കീടനാശിനി സബ്സിഡി',
+      fertilizerSubsidy: 'വള സബ്സിഡി',
+      seedsSubsidy: 'വിത്ത് സബ്സിഡി',
+      equipmentSubsidy: 'ഉപകരണ സബ്സിഡി',
+      howToApply: 'എങ്ങനെ അപേക്ഷിക്കാം',
+      requiredDocuments: 'ആവശ്യമായ രേഖകൾ',
+      processingTime: 'പ്രോസസ്സിംഗ് സമയം',
+      contactSupport: 'സപ്പോർട്ടുമായി ബന്ധപ്പെടുക'
     }
   };
 
   const t = translations[currentLanguage as keyof typeof translations] || translations.en;
 
-  const calculateDaysLeft = (deadline?: string) => {
-    if (!deadline) return null;
-    const today = new Date();
-    const deadlineDate = new Date(deadline);
-    const diffTime = deadlineDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
+  // Mock subsidy data for responses
+  const subsidyData: { [key: string]: SubsidyInfo } = {
+    pesticide: {
+      name: 'Pesticide Subsidy Scheme',
+      amount: '50% subsidy up to ₹10,000',
+      eligibility: ['Small & Marginal farmers', 'Certified organic farmers', 'FPO members'],
+      documents: ['Aadhaar Card', 'Land Records', 'Bank Details', 'Previous purchase bills'],
+      deadline: '2024-12-31'
+    },
+    fertilizer: {
+      name: 'Organic Fertilizer Promotion',
+      amount: '75% subsidy up to ₹15,000',
+      eligibility: ['All category farmers', 'Organic certification holders'],
+      documents: ['Farmer ID', 'Soil health card', 'Purchase receipts']
+    },
+    seeds: {
+      name: 'Quality Seed Distribution',
+      amount: '85% subsidy up to ₹5,000',
+      eligibility: ['BPL farmers', 'Women farmers', 'SC/ST farmers'],
+      documents: ['BPL Card', 'Caste certificate (if applicable)', 'Land documents']
+    },
+    equipment: {
+      name: 'Farm Equipment Subsidy',
+      amount: '40% subsidy up to ₹50,000',
+      eligibility: ['Farmers with >1 acre land', 'Valid land ownership'],
+      documents: ['Land records', 'Income certificate', 'Technical approval']
+    }
   };
 
-  const filteredSchemes = subsidySchemes.filter(scheme => {
-    const matchesSearch = scheme.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         scheme.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || scheme.category === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || scheme.status === selectedStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+  const quickActionButtons = [
+    { icon: CheckCircle, text: t.checkEligibility, action: 'eligibility' },
+    { icon: Calculator, text: t.calculateBenefits, action: 'calculate' },
+    { icon: FileText, text: t.applicationHelp, action: 'application' },
+    { icon: Gift, text: t.viewSchemes, action: 'schemes' }
+  ];
 
-  const calculateBenefit = (scheme: SubsidyScheme, amount: number) => {
-    const maxAmountNum = parseInt(scheme.maxAmount.replace(/[₹,]/g, ''));
-    const benefit = Math.min((amount * scheme.subsidyPercent) / 100, maxAmountNum);
-    return benefit;
+  const popularTopics = [
+    { icon: '🌿', text: t.pesticidesSubsidy, query: 'pesticide subsidy information' },
+    { icon: '🧪', text: t.fertilizerSubsidy, query: 'fertilizer subsidy details' },
+    { icon: '🌱', text: t.seedsSubsidy, query: 'seeds subsidy scheme' },
+    { icon: '🚜', text: t.equipmentSubsidy, query: 'equipment subsidy program' }
+  ];
+
+  useEffect(() => {
+    // Add welcome message when component mounts
+    if (messages.length === 0) {
+      const welcomeMessage: ChatMessage = {
+        id: '1',
+        text: t.welcomeMessage,
+        sender: 'bot',
+        timestamp: new Date(),
+        type: 'text'
+      };
+      setMessages([welcomeMessage]);
+    }
+  }, [t.welcomeMessage]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const generateBotResponse = (userMessage: string): string => {
+    const message = userMessage.toLowerCase();
+    
+    if (message.includes('pesticide') || message.includes('कीटनाशक') || message.includes('పురుగుమందు')) {
+      const info = subsidyData.pesticide;
+      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.${info.deadline ? ` Deadline: ${info.deadline}` : ''}`;
+    }
+    
+    if (message.includes('fertilizer') || message.includes('उर्वरक') || message.includes('ఎరువు')) {
+      const info = subsidyData.fertilizer;
+      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
+    }
+    
+    if (message.includes('seed') || message.includes('बीज') || message.includes('విత్తన')) {
+      const info = subsidyData.seeds;
+      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
+    }
+    
+    if (message.includes('equipment') || message.includes('उपकरण') || message.includes('పరికరం')) {
+      const info = subsidyData.equipment;
+      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
+    }
+    
+    if (message.includes('eligibility') || message.includes('पात्रता') || message.includes('అర్హత')) {
+      return 'To check your eligibility for subsidies, I need to know: 1) Your farmer category (Small/Marginal/Large), 2) Land ownership details, 3) Type of subsidy you\'re interested in. Please provide these details.';
+    }
+    
+    if (message.includes('apply') || message.includes('आवेदन') || message.includes('దరఖాస్తు')) {
+      return 'To apply for subsidies: 1) Visit your nearest agriculture office or apply online, 2) Submit required documents, 3) Fill the application form, 4) Wait for verification, 5) Receive approval and benefits. Processing time is usually 15-30 days.';
+    }
+    
+    if (message.includes('calculate') || message.includes('गणना') || message.includes('లెక్కింపు')) {
+      return 'To calculate your subsidy benefits, please tell me: 1) Type of subsidy (pesticide/fertilizer/seeds/equipment), 2) Your investment amount, 3) Your farmer category. I\'ll calculate the exact subsidy amount you\'re eligible for.';
+    }
+    
+    // Default response
+    return 'I can help you with information about government subsidies including pesticide, fertilizer, seeds, and equipment subsidies. You can ask about eligibility criteria, application process, required documents, or calculate potential benefits. What specific information do you need?';
   };
 
-  const handleApplySubsidy = (schemeName: string) => {
-    toast({
-      title: "Application Started",
-      description: `Redirecting to application form for ${schemeName}`,
-    });
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim()) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      text: inputMessage,
+      sender: 'user',
+      timestamp: new Date(),
+      type: 'text'
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
+    setIsTyping(true);
+
+    // Simulate bot response delay
+    setTimeout(() => {
+      const botResponse: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: generateBotResponse(inputMessage),
+        sender: 'bot',
+        timestamp: new Date(),
+        type: 'text'
+      };
+      setMessages(prev => [...prev, botResponse]);
+      setIsTyping(false);
+    }, 1500);
+  };
+
+  const handleQuickAction = (action: string) => {
+    let message = '';
+    switch (action) {
+      case 'eligibility':
+        message = 'I want to check my eligibility for subsidies';
+        break;
+      case 'calculate':
+        message = 'Help me calculate subsidy benefits';
+        break;
+      case 'application':
+        message = 'How do I apply for subsidies?';
+        break;
+      case 'schemes':
+        message = 'Show me all available subsidy schemes';
+        break;
+    }
+    setInputMessage(message);
+  };
+
+  const handlePopularTopic = (query: string) => {
+    setInputMessage(query);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   return (
-    <div className="space-y-6" id="subsidies">
-      <div className="text-center space-y-4">
-        <h2 className="text-3xl font-bold text-primary">{t.title}</h2>
-        <p className="text-muted-foreground">
-          {t.description}
-        </p>
-        
-        {/* Search and Filter Controls */}
-        <div className="flex flex-col md:flex-row gap-4 max-w-4xl mx-auto">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder={t.search}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-full md:w-48">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder={t.category} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="pesticide">Pesticides</SelectItem>
-              <SelectItem value="fertilizer">Fertilizers</SelectItem>
-              <SelectItem value="seeds">Seeds</SelectItem>
-              <SelectItem value="equipment">Equipment</SelectItem>
-              <SelectItem value="irrigation">Irrigation</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-            <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder={t.status} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="closing-soon">Closing Soon</SelectItem>
-              <SelectItem value="upcoming">Upcoming</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button 
-            variant="outline" 
-            onClick={() => setShowCalculator(!showCalculator)}
-            className="w-full md:w-auto"
-          >
-            <Calculator className="w-4 h-4 mr-2" />
-            {t.calculator}
-          </Button>
-        </div>
-
-        {/* Budget Calculator */}
-        {showCalculator && (
-          <Card className="max-w-md mx-auto">
-            <CardHeader>
-              <CardTitle className="text-lg">Subsidy Calculator</CardTitle>
-              <CardDescription>Calculate potential benefits for your investment</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Investment Amount (₹)</label>
-                <Input
-                  type="number"
-                  placeholder="Enter amount"
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                />
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5" id="subsidies">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-primary/10 to-accent/10 border-b">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <MessageSquare className="w-6 h-6 text-primary" />
               </div>
-              {budget && filteredSchemes.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Potential Benefits:</h4>
-                  {filteredSchemes.slice(0, 3).map((scheme, idx) => {
-                    const benefit = calculateBenefit(scheme, parseInt(budget) || 0);
-                    return (
-                      <div key={idx} className="flex justify-between text-sm">
-                        <span>{scheme.name}:</span>
-                        <span className="font-bold text-primary">₹{benefit.toLocaleString()}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              <div>
+                <h1 className="text-3xl font-bold text-primary">{t.title}</h1>
+                <p className="text-muted-foreground">{t.subtitle}</p>
+              </div>
+            </div>
+            
+            {/* Quick Actions */}
+            <div className="flex flex-wrap gap-3 justify-center">
+              {quickActionButtons.map((button, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickAction(button.action)}
+                  className="flex items-center gap-2 bg-background/80 hover:bg-primary/10"
+                >
+                  <button.icon className="w-4 h-4" />
+                  {button.text}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: 'Active Schemes', value: '12', color: 'text-success' },
-          { label: 'Total Beneficiaries', value: '13.2K', color: 'text-primary' },
-          { label: 'Avg Subsidy', value: '60%', color: 'text-accent' },
-          { label: 'Amount Disbursed', value: '₹2.4Cr', color: 'text-secondary' }
-        ].map((stat, index) => (
-          <Card key={index} className="text-center p-4">
-            <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-            <div className="text-sm text-muted-foreground">{stat.label}</div>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredSchemes.length > 0 ? filteredSchemes.map((scheme, index) => {
-          const daysLeft = calculateDaysLeft(scheme.deadline);
-          
-          return (
-            <Card key={index} className="hover:shadow-lg transition-all duration-300 group">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{categoryIcons[scheme.category]}</span>
-                      <CardTitle className="text-lg group-hover:text-primary transition-colors">
-                        {scheme.name}
-                      </CardTitle>
-                    </div>
-                    <div className="flex gap-2">
-                      <Badge className={categoryColors[scheme.category]} variant="secondary">
-                        {scheme.category}
-                      </Badge>
-                      <Badge className={statusColors[scheme.status]} variant="secondary">
-                        {scheme.status === 'closing-soon' ? 'Closing Soon' : scheme.status}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-                <CardDescription className="leading-relaxed">
-                  {scheme.description}
-                </CardDescription>
+      <div className="container mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
+          {/* Sidebar */}
+          <div className="lg:col-span-1 space-y-4">
+            {/* Popular Topics */}
+            <Card className="h-fit">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  {t.popularTopics}
+                </CardTitle>
               </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {/* Subsidy Details */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-primary/5 rounded-lg">
-                    <div className="text-2xl font-bold text-primary">{scheme.subsidyPercent}%</div>
-                    <div className="text-sm text-muted-foreground">Subsidy Rate</div>
-                  </div>
-                  <div className="text-center p-3 bg-secondary/5 rounded-lg">
-                    <div className="text-lg font-bold text-secondary">{scheme.maxAmount}</div>
-                    <div className="text-sm text-muted-foreground">Max Amount</div>
-                  </div>
-                </div>
-
-                {/* Progress and Stats */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium flex items-center gap-2">
-                      <Users className="w-4 h-4" />
-                      Beneficiaries
-                    </span>
-                    <span className="text-sm font-bold">{scheme.beneficiaries.toLocaleString()}</span>
-                  </div>
-                  <Progress value={75} className="h-2" />
-                </div>
-
-                {/* Deadline */}
-                {scheme.deadline && (
-                  <div className="flex items-center justify-between p-3 bg-warning/5 rounded-lg border border-warning/20">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-warning" />
-                      <span className="font-medium">Application Deadline</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-warning">
-                        {daysLeft && daysLeft > 0 ? `${daysLeft} days left` : 'Deadline passed'}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(scheme.deadline).toLocaleDateString('en-IN')}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Eligibility */}
-                <div className="space-y-2">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Target className="w-4 h-4 text-accent" />
-                    Eligibility Criteria
-                  </h4>
-                  <ul className="space-y-1">
-                    {scheme.eligibility.slice(0, 2).map((criteria, idx) => (
-                      <li key={idx} className="text-sm text-muted-foreground flex items-center gap-2">
-                        <CheckCircle className="w-3 h-3 text-success flex-shrink-0" />
-                        {criteria}
-                      </li>
-                    ))}
-                    {scheme.eligibility.length > 2 && (
-                      <li className="text-sm text-accent">
-                        +{scheme.eligibility.length - 2} more criteria
-                      </li>
-                    )}
-                  </ul>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-2 pt-2">
-                  <Button variant="outline" className="flex-1">
-                    View Details
-                  </Button>
-                  <Button 
-                    className="flex-1 bg-gradient-to-r from-primary to-primary-glow"
-                    disabled={scheme.status === 'upcoming'}
-                    onClick={() => handleApplySubsidy(scheme.name)}
+              <CardContent className="space-y-2">
+                {popularTopics.map((topic, index) => (
+                  <Button
+                    key={index}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handlePopularTopic(topic.query)}
+                    className="w-full justify-start text-left h-auto p-3 hover:bg-primary/5"
                   >
-                    {scheme.status === 'upcoming' ? 'Coming Soon' : 'Apply Now'}
-                    {scheme.status !== 'upcoming' && <ArrowRight className="w-4 h-4 ml-1" />}
+                    <span className="text-lg mr-2">{topic.icon}</span>
+                    <span className="text-sm">{topic.text}</span>
                   </Button>
-                </div>
+                ))}
               </CardContent>
             </Card>
-          );
-        }) : (
-          <div className="col-span-full text-center py-12 text-muted-foreground">
-            <Gift className="w-16 h-16 mx-auto mb-4 opacity-50" />
-            <h3 className="text-lg font-medium mb-2">No subsidies found</h3>
-            <p>Try adjusting your search criteria or filters</p>
-            <Button 
-              variant="outline" 
-              className="mt-4"
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedCategory('all');
-                setSelectedStatus('all');
-              }}
-            >
-              Clear Filters
-            </Button>
-          </div>
-        )}
-      </div>
 
-      {/* Call to Action */}
-      <div className="text-center space-y-4 p-8 bg-gradient-to-r from-primary/5 to-accent/5 rounded-lg">
-        <h3 className="text-xl font-bold">Need Help with Applications?</h3>
-        <p className="text-muted-foreground">
-          Our field officers are available to assist you with subsidy applications and documentation
-        </p>
-        <div className="flex gap-4 justify-center">
-          <Button variant="hero" size="lg">
-            <Gift className="w-4 h-4 mr-2" />
-            Get Application Help
-          </Button>
-          <Button variant="outline" size="lg">
-            Download Forms
-          </Button>
+            {/* Help Topics */}
+            <Card className="h-fit">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <HelpCircle className="w-5 h-5 text-accent" />
+                  Help Topics
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {[
+                  { icon: FileText, text: t.howToApply },
+                  { icon: CheckCircle, text: t.requiredDocuments },
+                  { icon: Clock, text: t.processingTime },
+                  { icon: MessageSquare, text: t.contactSupport }
+                ].map((item, index) => (
+                  <Button
+                    key={index}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handlePopularTopic(item.text)}
+                    className="w-full justify-start text-left h-auto p-3 hover:bg-accent/5"
+                  >
+                    <item.icon className="w-4 h-4 mr-2 text-accent" />
+                    <span className="text-sm">{item.text}</span>
+                  </Button>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Chat Interface */}
+          <div className="lg:col-span-3">
+            <Card className="h-full flex flex-col">
+              <CardHeader className="border-b bg-gradient-to-r from-primary/5 to-accent/5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                    <Bot className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">Subsidies Assistant</CardTitle>
+                    <CardDescription>AI-powered subsidy information and guidance</CardDescription>
+                  </div>
+                  <div className="ml-auto">
+                    <Badge variant="secondary" className="bg-success/10 text-success">
+                      Online
+                    </Badge>
+                  </div>
+                </div>
+              </CardHeader>
+
+              {/* Messages */}
+              <CardContent className="flex-1 p-0">
+                <ScrollArea className="h-full p-4">
+                  <div className="space-y-4">
+                    {messages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[80%] p-4 rounded-lg ${
+                            message.sender === 'user'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted border'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            {message.sender === 'bot' && (
+                              <Bot className="w-5 h-5 mt-0.5 text-primary flex-shrink-0" />
+                            )}
+                            {message.sender === 'user' && (
+                              <User className="w-5 h-5 mt-0.5 text-primary-foreground flex-shrink-0" />
+                            )}
+                            <div className="flex-1">
+                              <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                                {message.text}
+                              </div>
+                              <div className="text-xs opacity-70 mt-2">
+                                {message.timestamp.toLocaleTimeString([], { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {isTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-muted border p-4 rounded-lg max-w-[80%]">
+                          <div className="flex items-center gap-3">
+                            <Bot className="w-5 h-5 text-primary" />
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm text-muted-foreground">{t.typing}</div>
+                              <div className="flex gap-1">
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div ref={messagesEndRef} />
+                </ScrollArea>
+              </CardContent>
+
+              {/* Input */}
+              <div className="border-t p-4">
+                <div className="flex gap-3">
+                  <Input
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder={t.placeholder}
+                    className="flex-1"
+                    disabled={isTyping}
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!inputMessage.trim() || isTyping}
+                    size="sm"
+                    className="px-4"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground mt-2 text-center">
+                  Press Enter to send • AI-powered responses
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
