@@ -28,7 +28,7 @@ const mockQueries: VoiceQuery[] = [
     category: 'disease'
   },
   {
-    id: '2', 
+    id: '2',
     query: 'What is the current MSP for rice?',
     response: 'The current MSP for common rice is ₹2,300 per quintal for Kharif 2024. You can sell your produce at the nearest procurement center.',
     timestamp: new Date(Date.now() - 3600000),
@@ -47,7 +47,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [audioQueue, setAudioQueue] = useState<string[]>([]);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -60,23 +60,19 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
     if (audioQueue.length > 0 && !isPlaying) {
       setIsPlaying(true);
       const audioData = audioQueue[0];
-      
+
       // Create a data URL for the WAV file and play it
       const audioSrc = `data:audio/wav;base64,${audioData}`;
       audioPlayerRef.current = new Audio(audioSrc);
       
-      console.log('[DEBUG] Playing WAV audio from queue');
       audioPlayerRef.current.play();
       
       audioPlayerRef.current.onended = () => {
-        console.log('[DEBUG] Audio playback finished');
         // Remove the played item from queue and allow next to play
         setAudioQueue(prev => prev.slice(1));
         setIsPlaying(false);
         setCurrentPlayingId(null);
-      };
-      
-      audioPlayerRef.current.onerror = (error) => {
+      };      audioPlayerRef.current.onerror = (error) => {
         console.error('Audio playback error:', error);
         setAudioQueue(prev => prev.slice(1));
         setIsPlaying(false);
@@ -93,13 +89,13 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
   // WebSocket connection management
   const connectWebSocket = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
-    
+
     setConnectionStatus('connecting');
     const wsUrl = `ws://localhost:8000/ws/voice`;
-    
+
     try {
       wsRef.current = new WebSocket(wsUrl);
-      
+
       wsRef.current.onopen = () => {
         setConnectionStatus('connected');
         setIsConnected(true);
@@ -108,7 +104,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           description: "Voice assistant is ready",
         });
       };
-      
+
       wsRef.current.onmessage = (event) => {
         try {
           if (typeof event.data === 'string') {
@@ -116,21 +112,19 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
             const data = JSON.parse(event.data);
             handleWebSocketMessage(data);
           } else if (event.data instanceof ArrayBuffer) {
-            // Handle binary audio data (if any)
-            console.log('Received binary data:', event.data.byteLength, 'bytes');
-            // Note: We expect JSON messages for audio, so this shouldn't happen
+            // Handle binary audio data (if any) - not expected with WAV format
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
       };
-      
+
       wsRef.current.onclose = () => {
         setConnectionStatus('disconnected');
         setIsConnected(false);
         setIsRecording(false);
       };
-      
+
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
         setConnectionStatus('error');
@@ -152,7 +146,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
       case 'partial_transcript':
         setCurrentQuery(data.text);
         break;
-        
+
       case 'agent_response':
         const newQuery: VoiceQuery = {
           id: Date.now().toString(),
@@ -165,7 +159,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
         setVoiceQueries(prev => [newQuery, ...prev]);
         setCurrentQuery('');
         break;
-        
+
       case 'agent_audio_wav':
         // Handle complete WAV file from backend
         if (data.audio_data) {
@@ -174,10 +168,9 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           setAudioQueue(prev => [...prev, data.audio_data]);
         }
         break;
-        
+
       case 'status':
         // Handle status updates (ready, listening, thinking, speaking)
-        console.log('Voice agent status:', data.status);
         if (data.status === 'listening') {
           setCurrentQuery('Listening...');
         } else if (data.status === 'thinking') {
@@ -186,7 +179,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           setCurrentQuery('');
         }
         break;
-        
+
       case 'error':
         toast({
           title: "Voice Error",
@@ -194,16 +187,17 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           variant: "destructive"
         });
         break;
-        
+
       default:
-        console.log('Unknown message type:', data.type);
+        // Unknown message type - silently ignore
+        break;
     }
   };
 
   // Auto-connect on component mount
   useEffect(() => {
     connectWebSocket();
-    
+
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
@@ -346,45 +340,45 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
 
     try {
       // Get microphone access - let browser use its preferred sample rate
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,        // Mono audio
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
           // Remove sampleRate constraint - let browser choose (usually 48kHz)
-        } 
+        }
       });
-      
+
       // Create AudioContext for raw PCM processing
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioContext.createMediaStreamSource(stream);
-      
+
       // Create ScriptProcessor for raw audio data
       const processor = audioContext.createScriptProcessor(1024, 1, 1);
-      
+
       processor.onaudioprocess = (event) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           const inputData = event.inputBuffer.getChannelData(0);
-          
+
           // Convert float32 to int16 PCM
           const pcmData = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             // Convert from [-1, 1] float to [-32768, 32767] int16
             pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32767));
           }
-          
+
           // Send raw PCM data as binary
           wsRef.current.send(pcmData.buffer);
         }
       };
-      
+
       // Connect the audio processing chain
       source.connect(processor);
       processor.connect(audioContext.destination);
-      
+
       // Store references for cleanup
-      mediaRecorderRef.current = { 
+      mediaRecorderRef.current = {
         stop: () => {
           processor.disconnect();
           source.disconnect();
@@ -394,7 +388,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
         state: 'recording'
       } as any;
       setIsRecording(true);
-      
+
       toast({
         title: "Recording Started",
         description: "Speak your farming question clearly",
@@ -414,7 +408,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
       mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
-    
+
     toast({
       title: "Processing",
       description: "Analyzing your question...",
@@ -430,24 +424,24 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
 
     setIsPlaying(true);
     setCurrentPlayingId(query.id);
-    
+
     // Use Web Speech API for text-to-speech if available
     if ('speechSynthesis' in window) {
       // Cancel any existing speech
       speechSynthesis.cancel();
-      
+
       const utterance = new SpeechSynthesisUtterance(query.response);
       utterance.lang = query.language === 'hindi' ? 'hi-IN' : 'en-IN';
       utterance.rate = 0.9; // Slightly slower for better comprehension
       utterance.pitch = 1;
       utterance.volume = 1;
-      
+
       utterance.onend = () => {
         setIsPlaying(false);
         setCurrentPlayingId(null);
         speechSynthesisRef.current = null;
       };
-      
+
       utterance.onerror = () => {
         setIsPlaying(false);
         setCurrentPlayingId(null);
@@ -458,7 +452,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           variant: "destructive"
         });
       };
-      
+
       speechSynthesisRef.current = utterance;
       speechSynthesis.speak(utterance);
     } else {
@@ -468,7 +462,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
         setCurrentPlayingId(null);
       }, 3000);
     }
-    
+
     toast({
       title: "Playing Response",
       description: `Playing in ${query.language}`,
@@ -482,7 +476,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
     setIsPlaying(false);
     setCurrentPlayingId(null);
     speechSynthesisRef.current = null;
-    
+
     toast({
       title: "Audio Stopped",
       description: "Voice playback has been stopped",
@@ -523,10 +517,9 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
                 ) : (
                   <WifiOff className="w-4 h-4 text-red-500" />
                 )}
-                <span className={`text-xs ${
-                  connectionStatus === 'connected' ? 'text-green-500' : 
-                  connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'
-                }`}>
+                <span className={`text-xs ${connectionStatus === 'connected' ? 'text-green-500' :
+                    connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'
+                  }`}>
                   {connectionStatus}
                 </span>
               </div>
@@ -538,18 +531,17 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
           <CardContent className="space-y-6">
             {/* Recording Interface */}
             <div className="text-center space-y-4">
-              <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${
-                isRecording 
-                  ? 'bg-destructive/20 border-4 border-destructive animate-pulse' 
+              <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${isRecording
+                  ? 'bg-destructive/20 border-4 border-destructive animate-pulse'
                   : 'bg-primary/20 border-4 border-primary hover:bg-primary/30'
-              }`}>
+                }`}>
                 {isRecording ? (
                   <MicOff className="w-8 h-8 text-destructive" />
                 ) : (
                   <Mic className="w-8 h-8 text-primary" />
                 )}
               </div>
-              
+
               <div className="space-y-2">
                 {isRecording ? (
                   <>
@@ -657,14 +649,14 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
                       <p className="text-sm font-medium">{query.query}</p>
                     </div>
                   </div>
-                  
+
                   <div className="bg-primary/5 p-3 rounded border-l-4 border-primary">
                     <p className="text-sm">{query.response}</p>
                   </div>
-                  
+
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => handlePlayResponse(query)}
                     >
@@ -681,8 +673,8 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
                       )}
                     </Button>
                     {isPlaying && currentPlayingId === query.id && (
-                      <Button 
-                        variant="destructive" 
+                      <Button
+                        variant="destructive"
                         size="sm"
                         onClick={handleStopAudio}
                       >

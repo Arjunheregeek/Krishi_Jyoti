@@ -55,7 +55,7 @@ async def voice_ws(websocket: WebSocket):
     Buffers audio chunks and sends complete WAV files to frontend.
     """
     await websocket.accept()
-    print("[DEBUG] WebSocket client connected")
+    print("✅ Voice WebSocket client connected")
 
     # Audio buffer for collecting Deepgram audio chunks
     audio_buffer = bytearray()
@@ -64,14 +64,15 @@ async def voice_ws(websocket: WebSocket):
     async def on_response(role, content):
         nonlocal audio_buffer
         try:
-            print(f"[DEBUG] Sending response - Role: {role}, Content: {content[:100] if isinstance(content, str) else f'{len(content)} bytes'}")
             if role == "assistant":
+                print(f"🤖 Assistant: {content}")
                 await websocket.send_json({
                     "type": "agent_response", 
                     "text": content,
                     "timestamp": asyncio.get_event_loop().time()
                 })
             elif role == "user":
+                print(f"👤 User: {content}")
                 await websocket.send_json({
                     "type": "partial_transcript", 
                     "text": content,
@@ -80,11 +81,9 @@ async def voice_ws(websocket: WebSocket):
             elif role == "audio":
                 # Buffer audio chunks instead of sending immediately
                 audio_buffer.extend(content)
-                print(f"[DEBUG] Buffered audio: {len(content)} bytes, total buffer: {len(audio_buffer)} bytes")
             elif role == "audio_complete":
                 # Send complete WAV file when agent finishes speaking
                 if audio_buffer:
-                    print(f"[DEBUG] Creating WAV file from {len(audio_buffer)} bytes")
                     # Create WAV header for the complete audio buffer
                     wav_header = create_wav_header(
                         sample_rate=24000,
@@ -102,17 +101,17 @@ async def voice_ws(websocket: WebSocket):
                         "timestamp": asyncio.get_event_loop().time()
                     })
                     
-                    print(f"[DEBUG] Sent complete WAV file: {len(full_wav_data)} bytes")
                     audio_buffer.clear()
             elif role == "status":
-                # Send status updates (listening, thinking, speaking)
-                await websocket.send_json({
-                    "type": "status", 
-                    "status": content,
-                    "timestamp": asyncio.get_event_loop().time()
-                })
+                # Send status updates only for important events
+                if content in ["listening", "ready"]:
+                    await websocket.send_json({
+                        "type": "status", 
+                        "status": content,
+                        "timestamp": asyncio.get_event_loop().time()
+                    })
         except Exception as e:
-            print(f"Error sending WebSocket response: {e}")
+            print(f"❌ Error sending WebSocket response: {e}")
 
     # Initialize the VoiceAgent with the callback
     agent = VoiceAgent(on_response)
@@ -135,68 +134,49 @@ async def voice_ws(websocket: WebSocket):
             await websocket.close(code=1011)
             return
         
-        # Send ready status
-        await websocket.send_json({
-            "type": "status", 
-            "status": "ready",
-            "message": "Voice agent is ready"
-        })
+        print("🎤 Voice agent ready for queries")
 
         # Stream audio data from the client to Deepgram
         while agent.is_running():
             try:
                 # Receive audio data from frontend
                 message = await websocket.receive()
-                print(f"[DEBUG] Received message type: {message.get('type', 'unknown')}")
                 
                 if message["type"] == "websocket.receive":
                     if "bytes" in message:
-                        # Handle binary audio data
+                        # Handle binary audio data - send to Deepgram without logging
                         audio_data = message["bytes"]
-                        
-                        # Debug: Calculate audio characteristics
-                        samples = len(audio_data) // 2  # Assuming 16-bit audio
-                        duration_16khz = samples / 16000
-                        duration_48khz = samples / 48000
-                        
-                        print(f"[DEBUG] Received audio: {len(audio_data)} bytes, {samples} samples")
-                        print(f"[DEBUG] If 16kHz: {duration_16khz:.3f}s, If 48kHz: {duration_48khz:.3f}s")
-                        
                         agent.send_audio(audio_data)
                     elif "text" in message:
                         # Handle text messages (commands, etc.)
                         try:
                             text_message = json.loads(message["text"])
-                            print(f"[DEBUG] Received text message: {text_message}")
                             if text_message.get("type") == "command":
                                 command = text_message.get("command")
                                 if command == "stop":
-                                    print("[DEBUG] Stop command received")
+                                    print("🛑 Stop command received")
                                     break
-                                elif command == "start":
-                                    print("[DEBUG] Start command received")
-                                    # Agent is already started
-                                    pass
                         except json.JSONDecodeError:
-                            print("Received invalid JSON message")
+                            print("⚠️ Received invalid JSON message")
                 elif message["type"] == "websocket.disconnect":
-                    print("[DEBUG] WebSocket disconnect received")
+                    print("👋 WebSocket client disconnected")
                     break
                             
             except Exception as e:
-                print(f"Error receiving WebSocket data: {e}")
+                print(f"⚠️ Error receiving WebSocket data: {e}")
                 break
 
     except WebSocketDisconnect:
-        pass
+        print("👋 Client disconnected")
     except Exception as e:
-        print(f"Voice WebSocket error: {e}")
+        print(f"❌ Voice WebSocket error: {e}")
     finally:
         # Stop the Deepgram Agent
         try:
             agent.stop()
+            print("🧹 Voice agent stopped")
         except Exception as e:
-            print(f"Error stopping voice agent: {e}")
+            print(f"⚠️ Error stopping voice agent: {e}")
         
         # Close WebSocket if still open
         try:

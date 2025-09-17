@@ -22,8 +22,8 @@ class VoiceAgent:
     Voice Agent class for handling real-time voice interactions using Deepgram.
     Designed to work with WebSocket connections for frontend integration.
     
-    This class maintains the same audio format expectations as the original voice_agent.py:
-    - Input: 16kHz, 1 channel, 16-bit PCM
+    This class maintains the same audio format expectations as the frontend:
+    - Input: 48kHz, 1 channel, 16-bit PCM (from frontend)
     - Output: 24kHz, 1 channel, 16-bit PCM
     """
     
@@ -39,11 +39,12 @@ class VoiceAgent:
         if not self.api_key:
             raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
         
-        # Initialize Deepgram client with extended timeout config
+        # Initialize Deepgram client with minimal logging to reduce noise
         config = DeepgramClientOptions(
             options={
                 "keepalive": "true",
                 "timeout": 30.0,  # Increase timeout to 30 seconds
+                "verbose": False,  # Try to disable verbose logging
             }
         )
         self.deepgram = DeepgramClient(self.api_key, config)
@@ -62,9 +63,9 @@ class VoiceAgent:
         # Configure the Agent with simplified settings
         options = SettingsOptions()
         
-        # Audio settings - updated for 48kHz input from frontend
+        # Audio settings - match frontend's 48kHz format
         options.audio.input.encoding = "linear16"
-        options.audio.input.sample_rate = 48000  # Changed from 16000 to match frontend
+        options.audio.input.sample_rate = 48000  # Restored to match frontend
         options.audio.output.encoding = "linear16"
         options.audio.output.sample_rate = 24000
         options.audio.output.container = "none"
@@ -104,8 +105,7 @@ class VoiceAgent:
         agent = self
         
         def on_audio_data(client, data, **kwargs):
-            """Handle incoming audio data from Deepgram - same as original."""
-            print(f"[DEBUG] Received audio from Deepgram: {len(data)} bytes")
+            """Handle incoming audio data from Deepgram - send to WebSocket callback."""
             agent.audio_buffer.extend(data)
             if agent.response_callback and agent._main_loop:
                 # Schedule the callback in the main event loop
@@ -115,10 +115,9 @@ class VoiceAgent:
                 )
         
         def on_agent_audio_done(client, agent_audio_done, **kwargs):
-            """Handle completion of agent audio response - signal completion to WebSocket."""
-            print("[DEBUG] Agent audio done - signaling completion")
+            """Handle completion of agent audio response - signal completion to WebSocket immediately."""
             if agent.response_callback and agent._main_loop:
-                # Signal that audio is complete so WebSocket can send WAV file
+                # Signal that audio is complete so WebSocket can send WAV file immediately
                 asyncio.run_coroutine_threadsafe(
                     agent.response_callback("audio_complete", ""), 
                     agent._main_loop
@@ -126,25 +125,33 @@ class VoiceAgent:
             agent.audio_buffer = bytearray()
         
         def on_conversation_text(client, conversation_text, **kwargs):
-            """Handle conversation text updates - same logic as original."""
+            """Handle conversation text updates - skip History messages to prevent delays."""
             try:
+                # Check if this is a History message and skip it entirely
+                raw_content = str(conversation_text)
+                if 'History' in raw_content:
+                    return  # Skip History messages immediately
+                    
                 role = getattr(conversation_text, 'role', 'unknown')
                 content = getattr(conversation_text, 'content', str(conversation_text))
                 
-                print(f"[DEBUG] Conversation - Role: {role}, Content: {content}")
-                
-                # Send to WebSocket callback if available
+                # Only process real conversation messages
+                if role == 'user':
+                    print(f"👤 User: {content}")
+                elif role == 'assistant':
+                    print(f"🤖 Assistant: {content}")
+                    
+                # Send to WebSocket callback only for real messages
                 if agent.response_callback and agent._main_loop and role in ['user', 'assistant']:
                     asyncio.run_coroutine_threadsafe(
                         agent.response_callback(role, content), 
                         agent._main_loop
                     )
             except Exception as e:
-                print(f"Error in conversation text handler: {e}")
+                print(f"⚠️ Error in conversation text handler: {e}")
         
         def on_welcome(client, welcome, **kwargs):
-            """Handle welcome message - same as original."""
-            print(f"[DEBUG] Welcome: {welcome}")
+            """Handle welcome message."""
             if agent.response_callback and agent._main_loop:
                 asyncio.run_coroutine_threadsafe(
                     agent.response_callback("status", "ready"), 
@@ -152,8 +159,7 @@ class VoiceAgent:
                 )
         
         def on_user_started_speaking(client, user_started_speaking, **kwargs):
-            """Handle user started speaking event - same as original."""
-            print(f"[DEBUG] User started speaking: {user_started_speaking}")
+            """Handle user started speaking event."""
             agent.audio_buffer.clear()
             if agent.response_callback and agent._main_loop:
                 asyncio.run_coroutine_threadsafe(
@@ -171,7 +177,7 @@ class VoiceAgent:
                         agent._main_loop
                     )
             except Exception as e:
-                print(f"Error in inject user message handler: {e}")
+                print(f"⚠️ Error in inject user message handler: {e}")
         
         def on_inject_agent_message(client, inject_agent_message, **kwargs):
             """Handle injected agent message event."""
@@ -183,11 +189,10 @@ class VoiceAgent:
                         agent._main_loop
                     )
             except Exception as e:
-                print(f"Error in inject agent message handler: {e}")
+                print(f"⚠️ Error in inject agent message handler: {e}")
         
         def on_agent_started_speaking(client, agent_started_speaking, **kwargs):
-            """Handle agent started speaking event - same as original."""
-            print(f"[DEBUG] Agent started speaking: {agent_started_speaking}")
+            """Handle agent started speaking event."""
             agent.audio_buffer = bytearray()
             if agent.response_callback and agent._main_loop:
                 asyncio.run_coroutine_threadsafe(
@@ -195,9 +200,12 @@ class VoiceAgent:
                     agent._main_loop
                 )
         
+        def on_history(client, history, **kwargs):
+            """Handle history events - silently ignore to prevent delays."""
+            pass
+        
         def on_agent_thinking(client, agent_thinking, **kwargs):
             """Handle agent thinking event."""
-            print(f"[DEBUG] Agent thinking: {agent_thinking}")
             if agent.response_callback and agent._main_loop:
                 asyncio.run_coroutine_threadsafe(
                     agent.response_callback("status", "thinking"), 
@@ -205,21 +213,29 @@ class VoiceAgent:
                 )
         
         def on_error(client, error, **kwargs):
-            """Handle errors - same as original."""
-            print(f"[DEBUG] Deepgram Error: {error}")
+            """Handle errors."""
+            print(f"❌ Deepgram Error: {error}")
             if agent.response_callback and agent._main_loop:
                 asyncio.run_coroutine_threadsafe(
                     agent.response_callback("error", str(error)), 
                     agent._main_loop
                 )
         
-        # Placeholder handlers - same as original
+        # Placeholder handlers - silently handle events
         def on_settings_applied(client, settings_applied, **kwargs): 
-            print(f"[DEBUG] Settings applied: {settings_applied}")
+            pass
         def on_close(client, close, **kwargs): 
-            print(f"[DEBUG] Connection closed: {close}")
+            pass
         def on_unhandled(client, unhandled, **kwargs): 
-            print(f"[DEBUG] Unhandled event: {unhandled}")
+            """Handle unhandled events - efficiently filter out History messages that cause delays."""
+            try:
+                # Check if this is a History message and skip all processing
+                if hasattr(unhandled, 'raw'):
+                    if '"type":"History"' in str(unhandled.raw):
+                        return  # Skip History messages immediately
+                # Skip all other unhandled events to prevent delays
+            except:
+                pass
         
         # Register all handlers - exact same order as original
         self.connection.on(AgentWebSocketEvents.AudioData, on_audio_data)
@@ -235,6 +251,14 @@ class VoiceAgent:
         self.connection.on(AgentWebSocketEvents.Close, on_close)
         self.connection.on(AgentWebSocketEvents.Error, on_error)
         self.connection.on(AgentWebSocketEvents.Unhandled, on_unhandled)
+        
+        # Try to handle History events if they exist
+        try:
+            # Check if History event exists and register it
+            if hasattr(AgentWebSocketEvents, 'History'):
+                self.connection.on(AgentWebSocketEvents.History, on_history)
+        except Exception:
+            pass
     
     def _keep_alive_worker(self):
         """Keep-alive worker thread - same logic as original."""
@@ -300,9 +324,7 @@ class VoiceAgent:
         """
         if self.connection and self.running:
             try:
-                # Debug: Log audio data being sent
-                print(f"[DEBUG] Sending {len(audio_data)} bytes to Deepgram")
-                # Send raw audio data directly - same as original
+                # Send raw audio data directly
                 self.connection.send(audio_data)
             except Exception as e:
                 print(f"Error sending audio: {e}")
