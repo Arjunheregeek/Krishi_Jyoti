@@ -236,6 +236,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
+          
           sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,

@@ -47,14 +47,15 @@ def get_soil_data(lat, lon):
             for prop in properties:
                 name = prop['name']
                 value = prop['depths'][0]['values']['mean']
-                
-                if name == "phh2o":
-                    # SoilGrids returns pH multiplied by 10
-                    soil_details['pH'] = value / 10
-                elif name == "ocd":
-                    # Organic Carbon Density is a proxy for soil health/fertility
-                    soil_details['Organic_Carbon_Density'] = value
-            
+                if value is not None:
+                    if name == "phh2o":
+                        # SoilGrids returns pH multiplied by 10
+                        soil_details['pH'] = value / 10
+                    elif name == "ocd":
+                        # Organic Carbon Density is a proxy for soil health/fertility
+                        soil_details['Organic_Carbon_Density'] = value
+                else:
+                    print(f"⚠️ Warning: No value returned for {name} at this location.")
             return soil_details
         else:
             print(f"❌ Error: API returned status code {response.status_code}")
@@ -66,7 +67,7 @@ def get_soil_data(lat, lon):
 # --- MAIN WORKFLOW ---
 if __name__ == "__main__":
     # The location you want to check
-    my_location = "Rohta Road, Meerut, Uttar Pradesh"
+    my_location = "Modinagar, Uttar Pradesh"
     
     # Step 1: Get the coordinates
     latitude, longitude = get_coordinates(my_location)
