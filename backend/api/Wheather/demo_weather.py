@@ -2,7 +2,7 @@
 Demo script to showcase Weather API features for Krishi Jyoti
 """
 
-from wheatherapi import WeatherService, get_weather, get_forecast, get_agricultural_weather, find_coordinates
+from .wheatherapi import WeatherService, get_weather, get_forecast, get_agricultural_weather, find_coordinates
 import json
 
 def print_json(data, title="Data"):
