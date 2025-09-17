@@ -64,15 +64,15 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
       // Create a data URL for the WAV file and play it
       const audioSrc = `data:audio/wav;base64,${audioData}`;
       audioPlayerRef.current = new Audio(audioSrc);
-      
+
       audioPlayerRef.current.play();
-      
+
       audioPlayerRef.current.onended = () => {
         // Remove the played item from queue and allow next to play
         setAudioQueue(prev => prev.slice(1));
         setIsPlaying(false);
         setCurrentPlayingId(null);
-      };      audioPlayerRef.current.onerror = (error) => {
+      }; audioPlayerRef.current.onerror = (error) => {
         console.error('Audio playback error:', error);
         setAudioQueue(prev => prev.slice(1));
         setIsPlaying(false);
@@ -518,7 +518,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
                   <WifiOff className="w-4 h-4 text-red-500" />
                 )}
                 <span className={`text-xs ${connectionStatus === 'connected' ? 'text-green-500' :
-                    connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'
+                  connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'
                   }`}>
                   {connectionStatus}
                 </span>
@@ -532,8 +532,8 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
             {/* Recording Interface */}
             <div className="text-center space-y-4">
               <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center transition-all duration-300 ${isRecording
-                  ? 'bg-destructive/20 border-4 border-destructive animate-pulse'
-                  : 'bg-primary/20 border-4 border-primary hover:bg-primary/30'
+                ? 'bg-destructive/20 border-4 border-destructive animate-pulse'
+                : 'bg-primary/20 border-4 border-primary hover:bg-primary/30'
                 }`}>
                 {isRecording ? (
                   <MicOff className="w-8 h-8 text-destructive" />
