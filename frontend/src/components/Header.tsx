@@ -22,7 +22,7 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
   const translations = {
     en: {
       dashboard: 'Dashboard',
-      schemes: 'Schemes', 
+      schemes: 'Crop Recommendation System', 
       loans: 'Loans',
       subsidies: 'Subsidies',
       diseaseDetection: 'Disease Detection',
@@ -32,7 +32,7 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
     },
     hi: {
       dashboard: 'डैशबोर्ड',
-      schemes: 'योजनाएं',
+      schemes: 'फसल सिफारिश प्रणाली',
       loans: 'ऋण',
       subsidies: 'सब्सिडी',
       diseaseDetection: 'रोग पहचान',
@@ -42,7 +42,7 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
     },
     te: {
       dashboard: 'డాష్‌బోర్డ్',
-      schemes: 'పథకాలు',
+      schemes: 'పంట సిఫార్సు వ్యవస్థ',
       loans: 'రుణాలు', 
       subsidies: 'సబ్సిడీలు',
       diseaseDetection: 'వ్యాధి గుర్తింపు',
@@ -52,7 +52,7 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
     },
     ta: {
       dashboard: 'கட்டுப்பாட்டு பலகை',
-      schemes: 'திட்டங்கள்',
+      schemes: 'பயிர் பரிந்துரை அமைப்பு',
       loans: 'கடன்கள்',
       subsidies: 'மானியங்கள்',
       diseaseDetection: 'நோய் கண்டறிதல்',
@@ -62,7 +62,7 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
     },
     ml: {
       dashboard: 'ഡാഷ്ബോർഡ്',
-      schemes: 'പദ്ധതികൾ',
+      schemes: 'വിള ശുപാർശ സിസ്റ്റം',
       loans: 'വായ്പകൾ',
       subsidies: 'സബ്സിഡികൾ', 
       diseaseDetection: 'രോഗ കണ്ടെത്തൽ',
