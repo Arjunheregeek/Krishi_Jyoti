@@ -2,156 +2,56 @@ import os
 import requests
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 def get_weather_by_city(city_name):
-    """
-    Get current weather data for a specific city using OpenWeatherMap API
-    """
     api_key = os.getenv('weather_api_key')
-    
     if not api_key:
-        return {"error": "Weather API key not found in environment variables"}
-    
-    # OpenWeatherMap Current Weather API endpoint
-    base_url = "http://api.openweathermap.org/data/2.5/weather"
-    
-    # Parameters for the API request
-    params = {
-        'q': city_name,
-        'appid': api_key,
-        'units': 'metric'  # Use Celsius, change to 'imperial' for Fahrenheit
-    }
+        return {"error": "Weather API key not found"}
+
+    # --- Part 1: Get coordinates for the city ---
+    geo_url = "http://api.openweathermap.org/geo/1.0/direct"
+    geo_params = {'q': city_name, 'limit': 1, 'appid': api_key}
     
     try:
-        # Make API request
-        response = requests.get(base_url, params=params)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        
-        # Parse JSON response
-        data = response.json()
-        
-        # Extract relevant weather information
-        weather_info = {
-            'city': data['name'],
-            'country': data['sys']['country'],
-            'temperature': data['main']['temp'],
-            'feels_like': data['main']['feels_like'],
-            'humidity': data['main']['humidity'],
-            'pressure': data['main']['pressure'],
-            'description': data['weather'][0]['description'],
-            'main': data['weather'][0]['main'],
-            'wind_speed': data['wind']['speed'],
-            'visibility': data.get('visibility', 'N/A')
-        }
-        
-        return weather_info
-        
-    except requests.exceptions.RequestException as e:
-        return {"error": f"Request failed: {str(e)}"}
-    except KeyError as e:
-        return {"error": f"Unexpected response format: {str(e)}"}
-    except Exception as e:
-        return {"error": f"An error occurred: {str(e)}"}
+        response = requests.get(geo_url, params=geo_params)
+        response.raise_for_status()
+        geo_data = response.json()
+        if not geo_data:
+            return {"error": f"City '{city_name}' not found."}
+        lat, lon = geo_data[0]['lat'], geo_data[0]['lon']
 
-def get_weather_by_coordinates(lat, lon):
-    """
-    Get current weather data for specific coordinates using OpenWeatherMap API
-    """
-    api_key = os.getenv('weather_api_key')
-    
-    if not api_key:
-        return {"error": "Weather API key not found in environment variables"}
-    
-    # OpenWeatherMap Current Weather API endpoint
-    base_url = "http://api.openweathermap.org/data/2.5/weather"
-    
-    # Parameters for the API request
-    params = {
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Geocoding request failed: {e}"}
+
+    # --- Part 2: Use coordinates to get daily forecast with rainfall ---
+    one_call_url = "https://api.openweathermap.org/data/3.0/onecall"
+    one_call_params = {
         'lat': lat,
         'lon': lon,
         'appid': api_key,
-        'units': 'metric'
+        'units': 'metric',
+        'exclude': 'current,minutely,hourly,alerts' # We only need the daily forecast
     }
-    
+
     try:
-        response = requests.get(base_url, params=params)
+        response = requests.get(one_call_url, params=one_call_params)
         response.raise_for_status()
-        
         data = response.json()
-        
+
+        # Extract today's rainfall (or 0 if not present)
+        # 'rain' is the predicted rainfall in mm for the day
+        daily_forecast = data.get('daily', [{}])[0]
+        rainfall_mm = daily_forecast.get('rain', 0) 
+
         weather_info = {
-            'city': data['name'],
-            'country': data['sys']['country'],
-            'coordinates': {'lat': data['coord']['lat'], 'lon': data['coord']['lon']},
-            'temperature': data['main']['temp'],
-            'feels_like': data['main']['feels_like'],
-            'humidity': data['main']['humidity'],
-            'pressure': data['main']['pressure'],
-            'description': data['weather'][0]['description'],
-            'main': data['weather'][0]['main'],
-            'wind_speed': data['wind']['speed'],
-            'visibility': data.get('visibility', 'N/A')
+            'temperature': daily_forecast.get('temp', {}).get('day', 25), # Use average day temp
+            'humidity': daily_forecast.get('humidity', 70),
+            'rainfall': rainfall_mm  # This is the key addition!
         }
-        
         return weather_info
-        
+
     except requests.exceptions.RequestException as e:
-        return {"error": f"Request failed: {str(e)}"}
-    except Exception as e:
-        return {"error": f"An error occurred: {str(e)}"}
-
-def test_api_key():
-    """
-    Test if the API key is working by making a simple request
-    """
-    print("Testing OpenWeatherMap API key...")
-    print("-" * 40)
-    
-    # Test with a well-known city
-    test_city = "London"
-    result = get_weather_by_city(test_city)
-    
-    if "error" in result:
-        print(f"❌ API test failed: {result['error']}")
-        return False
-    else:
-        print("✅ API key is working!")
-        print(f"Test city: {result['city']}, {result['country']}")
-        print(f"Temperature: {result['temperature']}°C")
-        print(f"Weather: {result['description']}")
-        return True
-
-if __name__ == "__main__":
-    # Test the API key first
-    if test_api_key():
-        print("\n" + "=" * 50)
-        print("Weather API Test - Enter cities to check weather")
-        print("Type 'quit' to exit")
-        print("=" * 50)
-        
-        while True:
-            city = input("\nEnter city name: ").strip()
-            
-            if city.lower() in ['quit', 'exit', 'q']:
-                print("Goodbye!")
-                break
-            
-            if city:
-                print(f"\nFetching weather for {city}...")
-                weather = get_weather_by_city(city)
-                
-                if "error" in weather:
-                    print(f"❌ Error: {weather['error']}")
-                else:
-                    print(f"\n🌡️  Weather in {weather['city']}, {weather['country']}")
-                    print(f"Temperature: {weather['temperature']}°C (feels like {weather['feels_like']}°C)")
-                    print(f"Condition: {weather['main']} - {weather['description']}")
-                    print(f"Humidity: {weather['humidity']}%")
-                    print(f"Pressure: {weather['pressure']} hPa")
-                    print(f"Wind Speed: {weather['wind_speed']} m/s")
-                    if weather['visibility'] != 'N/A':
-                        print(f"Visibility: {weather['visibility']} meters")
-            else:
-                print("Please enter a valid city name.")
+        return {"error": f"One Call API request failed: {e}"}
+    except (KeyError, IndexError) as e:
+        return {"error": f"Unexpected API response format: {e}"}
