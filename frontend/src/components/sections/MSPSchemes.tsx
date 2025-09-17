@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { TrendingUp, Calendar, MapPin, DollarSign } from 'lucide-react';
+import ChatBot from '@/components/ChatBot';
 
 interface MSPSchemesProps {
   currentLanguage: string;
@@ -123,7 +124,7 @@ const MSPSchemes = ({ currentLanguage }: MSPSchemesProps) => {
   const t = translations[currentLanguage as keyof typeof translations] || translations.en;
 
   return (
-    <div className="space-y-6" id="schemes">
+    <div className="space-y-6 relative" id="schemes">
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold text-primary">{t.title}</h2>
         <p className="text-muted-foreground">
@@ -190,6 +191,9 @@ const MSPSchemes = ({ currentLanguage }: MSPSchemesProps) => {
           {t.viewAll}
         </Button>
       </div>
+      
+      {/* ChatBot Component */}
+      <ChatBot currentLanguage={currentLanguage} />
     </div>
   );
 };
