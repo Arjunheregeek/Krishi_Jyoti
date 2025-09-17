@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Mic, MicOff, Volume2, VolumeX, Phone, MessageSquare, Play, Pause } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Phone, MessageSquare, Play, Pause, Wifi, WifiOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface VoiceSupportProps {
@@ -44,8 +44,175 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
   const [currentQuery, setCurrentQuery] = useState('');
   const [voiceQueries, setVoiceQueries] = useState<VoiceQuery[]>(mockQueries);
   const [selectedLanguage, setSelectedLanguage] = useState('hindi');
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [audioQueue, setAudioQueue] = useState<string[]>([]);
+  
+  const wsRef = useRef<WebSocket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const { toast } = useToast();
+
+  // Audio queue management effect
+  useEffect(() => {
+    if (audioQueue.length > 0 && !isPlaying) {
+      setIsPlaying(true);
+      const audioData = audioQueue[0];
+      
+      // Create a data URL for the WAV file and play it
+      const audioSrc = `data:audio/wav;base64,${audioData}`;
+      audioPlayerRef.current = new Audio(audioSrc);
+      
+      console.log('[DEBUG] Playing WAV audio from queue');
+      audioPlayerRef.current.play();
+      
+      audioPlayerRef.current.onended = () => {
+        console.log('[DEBUG] Audio playback finished');
+        // Remove the played item from queue and allow next to play
+        setAudioQueue(prev => prev.slice(1));
+        setIsPlaying(false);
+        setCurrentPlayingId(null);
+      };
+      
+      audioPlayerRef.current.onerror = (error) => {
+        console.error('Audio playback error:', error);
+        setAudioQueue(prev => prev.slice(1));
+        setIsPlaying(false);
+        setCurrentPlayingId(null);
+        toast({
+          title: "Audio Error",
+          description: "Failed to play voice response",
+          variant: "destructive"
+        });
+      };
+    }
+  }, [audioQueue, isPlaying, toast]);
+
+  // WebSocket connection management
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    
+    setConnectionStatus('connecting');
+    const wsUrl = `ws://localhost:8000/ws/voice`;
+    
+    try {
+      wsRef.current = new WebSocket(wsUrl);
+      
+      wsRef.current.onopen = () => {
+        setConnectionStatus('connected');
+        setIsConnected(true);
+        toast({
+          title: "Connected",
+          description: "Voice assistant is ready",
+        });
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          if (typeof event.data === 'string') {
+            // Handle JSON messages
+            const data = JSON.parse(event.data);
+            handleWebSocketMessage(data);
+          } else if (event.data instanceof ArrayBuffer) {
+            // Handle binary audio data (if any)
+            console.log('Received binary data:', event.data.byteLength, 'bytes');
+            // Note: We expect JSON messages for audio, so this shouldn't happen
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      wsRef.current.onclose = () => {
+        setConnectionStatus('disconnected');
+        setIsConnected(false);
+        setIsRecording(false);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+        setIsConnected(false);
+        toast({
+          title: "Connection Error",
+          description: "Failed to connect to voice service",
+          variant: "destructive"
+        });
+      };
+    } catch (error) {
+      console.error('Error creating WebSocket:', error);
+      setConnectionStatus('error');
+    }
+  }, [toast]);
+
+  const handleWebSocketMessage = (data: any) => {
+    switch (data.type) {
+      case 'partial_transcript':
+        setCurrentQuery(data.text);
+        break;
+        
+      case 'agent_response':
+        const newQuery: VoiceQuery = {
+          id: Date.now().toString(),
+          query: currentQuery || 'Voice query',
+          response: data.text,
+          timestamp: new Date(),
+          language: selectedLanguage,
+          category: 'general'
+        };
+        setVoiceQueries(prev => [newQuery, ...prev]);
+        setCurrentQuery('');
+        break;
+        
+      case 'agent_audio_wav':
+        // Handle complete WAV file from backend
+        if (data.audio_data) {
+          console.log('[DEBUG] Received complete WAV audio file');
+          // Add to queue for sequential playback
+          setAudioQueue(prev => [...prev, data.audio_data]);
+        }
+        break;
+        
+      case 'status':
+        // Handle status updates (ready, listening, thinking, speaking)
+        console.log('Voice agent status:', data.status);
+        if (data.status === 'listening') {
+          setCurrentQuery('Listening...');
+        } else if (data.status === 'thinking') {
+          setCurrentQuery('Processing...');
+        } else if (data.status === 'speaking') {
+          setCurrentQuery('');
+        }
+        break;
+        
+      case 'error':
+        toast({
+          title: "Voice Error",
+          description: data.message || "An error occurred",
+          variant: "destructive"
+        });
+        break;
+        
+      default:
+        console.log('Unknown message type:', data.type);
+    }
+  };
+
+  // Auto-connect on component mount
+  useEffect(() => {
+    connectWebSocket();
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, [connectWebSocket]);
 
   const translations = {
     en: {
@@ -167,57 +334,91 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
 
   const t = translations[currentLanguage as keyof typeof translations] || translations.en;
 
-  const handleStartRecording = () => {
-    setIsRecording(true);
-    
-    // Start actual speech recognition if available
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.lang = selectedLanguage === 'hindi' ? 'hi-IN' : 'en-IN';
-      recognition.continuous = false;
-      recognition.interimResults = false;
+  const handleStartRecording = async () => {
+    if (!isConnected) {
+      toast({
+        title: "Not Connected",
+        description: "Please wait for voice service to connect",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Get microphone access - let browser use its preferred sample rate
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          channelCount: 1,        // Mono audio
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+          // Remove sampleRate constraint - let browser choose (usually 48kHz)
+        } 
+      });
       
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setCurrentQuery(transcript);
-        handleStopRecording();
+      // Create AudioContext for raw PCM processing
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      
+      // Create ScriptProcessor for raw audio data
+      const processor = audioContext.createScriptProcessor(1024, 1, 1);
+      
+      processor.onaudioprocess = (event) => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const inputData = event.inputBuffer.getChannelData(0);
+          
+          // Convert float32 to int16 PCM
+          const pcmData = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            // Convert from [-1, 1] float to [-32768, 32767] int16
+            pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32767));
+          }
+          
+          // Send raw PCM data as binary
+          wsRef.current.send(pcmData.buffer);
+        }
       };
       
-      recognition.start();
+      // Connect the audio processing chain
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      
+      // Store references for cleanup
+      mediaRecorderRef.current = { 
+        stop: () => {
+          processor.disconnect();
+          source.disconnect();
+          audioContext.close();
+          stream.getTracks().forEach(track => track.stop());
+        },
+        state: 'recording'
+      } as any;
+      setIsRecording(true);
+      
+      toast({
+        title: "Recording Started",
+        description: "Speak your farming question clearly",
+      });
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast({
+        title: "Recording Error",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive"
+      });
     }
-    
-    toast({
-      title: "Recording Started",
-      description: "Speak your question clearly. We support Hindi, English, and regional languages.",
-    });
   };
 
   const handleStopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
     
-    // Simulate voice processing
-    setTimeout(() => {
-      const mockQuery = "मौसम की जानकारी चाहिए";
-      const mockResponse = "कल से 3 दिन तक हल्की बारिश की संभावना है। खेत में पानी भरने से बचने के लिए जल निकासी की व्यवस्था करें।";
-      
-      const newQuery: VoiceQuery = {
-        id: Date.now().toString(),
-        query: mockQuery,
-        response: mockResponse,
-        timestamp: new Date(),
-        language: selectedLanguage,
-        category: 'weather'
-      };
-      
-      setVoiceQueries(prev => [newQuery, ...prev]);
-      setCurrentQuery(mockQuery);
-      
-      toast({
-        title: "Query Processed",
-        description: "Voice response is ready to play",
-      });
-    }, 2000);
+    toast({
+      title: "Processing",
+      description: "Analyzing your question...",
+    });
   };
 
   const handlePlayResponse = (query: VoiceQuery) => {
@@ -314,6 +515,21 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
             <CardTitle className="flex items-center gap-2">
               <Mic className="w-5 h-5 text-primary" />
               {t.voiceAssistant}
+              <div className="ml-auto flex items-center gap-1">
+                {connectionStatus === 'connected' ? (
+                  <Wifi className="w-4 h-4 text-green-500" />
+                ) : connectionStatus === 'connecting' ? (
+                  <Wifi className="w-4 h-4 text-yellow-500 animate-pulse" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-red-500" />
+                )}
+                <span className={`text-xs ${
+                  connectionStatus === 'connected' ? 'text-green-500' : 
+                  connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'
+                }`}>
+                  {connectionStatus}
+                </span>
+              </div>
             </CardTitle>
             <CardDescription>
               {t.assistantDescription}
@@ -367,6 +583,14 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
                 )}
               </Button>
             </div>
+
+            {/* Current Query Display */}
+            {currentQuery && (
+              <div className="bg-muted/50 p-3 rounded-lg border">
+                <p className="text-sm font-medium text-muted-foreground mb-1">Current Query:</p>
+                <p className="text-sm">{currentQuery}</p>
+              </div>
+            )}
 
             {/* Language Selection */}
             <div className="space-y-2">
