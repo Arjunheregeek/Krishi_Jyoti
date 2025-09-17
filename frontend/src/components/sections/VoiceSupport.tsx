@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Mic, MicOff, Volume2, VolumeX, Phone, MessageSquare, Play, Pause } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+const VOICE_WS_URL = (import.meta as any)?.env?.VITE_VOICE_WS_URL || 'ws://127.0.0.1:8000/ws/voice';
 
 interface VoiceSupportProps {
   currentLanguage: string;
@@ -42,10 +44,69 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null);
   const [currentQuery, setCurrentQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
   const [voiceQueries, setVoiceQueries] = useState<VoiceQuery[]>(mockQueries);
-  const [selectedLanguage, setSelectedLanguage] = useState('hindi');
+  const [selectedLanguage, setSelectedLanguage] = useState(currentLanguage || 'hindi');
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const { toast } = useToast();
+
+  // Function to play audio data received from Deepgram
+  const playAudioData = (audioData: Uint8Array) => {
+    try {
+      console.log('Received audio data length:', audioData.length);
+      
+      // Create audio context for playback
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      // Deepgram Agent typically outputs PCM16 at 24kHz
+      const sampleRate = 24000;
+      
+      // Convert Uint8Array to Int16Array (PCM16)
+      const pcmData = new Int16Array(audioData.buffer);
+      console.log('PCM data length:', pcmData.length);
+      
+      if (pcmData.length === 0) {
+        console.warn('Empty audio data received');
+        return;
+      }
+      
+      // Convert PCM16 to Float32Array for Web Audio API
+      const floatData = new Float32Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        floatData[i] = pcmData[i] / 32768.0; // Convert to [-1, 1] range
+      }
+
+      // Create audio buffer
+      const audioBuffer = audioContext.createBuffer(1, floatData.length, sampleRate);
+      audioBuffer.copyToChannel(floatData, 0);
+
+      // Create source and play
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      
+      source.onended = () => {
+        console.log('Audio playback finished');
+      };
+      
+      console.log('Starting audio playback...');
+      source.start();
+
+    } catch (error) {
+      console.error('Error playing audio data:', error);
+      
+      // Fallback to browser TTS if audio playback fails
+      if (aiResponse) {
+        const utterance = new SpeechSynthesisUtterance(aiResponse);
+        utterance.lang = selectedLanguage === 'hindi' ? 'hi-IN' : 'en-IN';
+        speechSynthesis.speak(utterance);
+      }
+    }
+  };
 
   const translations = {
     en: {
@@ -147,7 +208,7 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
       assistantDescription: 'മലയാളം, ഹിന്ദി, ഇംഗ്ലീഷ്, പ്രാദേശിക ഭാഷകളിൽ കൃഷി, കാലാവസ്ഥ, പദ്ധതികൾ, രോഗങ്ങൾ എന്നിവയെക്കുറിച്ച് ചോദ്യങ്ങൾ ചോദിക്കുക',
       recording: 'റെക്കോർഡിംഗ്...',
       stopRecordingTap: 'റെക്കോർഡിംഗ് നിർത്താൻ ടാപ്പ് ചെയ്യുക',
-      readyToHelp: 'സഹായത്തിന് തയ്യാർ',
+      readyToHelp: 'സഹായത്തിന് തയ്യാറാണ്',
       startVoiceQueryTap: 'വോയ്‌സ് ചോദ്യം ആരംഭിക്കാൻ ടാപ്പ് ചെയ്യുക',
       stopRecordingBtn: 'റെക്കോർഡിംഗ് നിർത്തുക',
       startVoiceQueryBtn: 'വോയ്‌സ് ചോദ്യം ആരംഭിക്കുക',
@@ -167,57 +228,180 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
 
   const t = translations[currentLanguage as keyof typeof translations] || translations.en;
 
-  const handleStartRecording = () => {
+  const handleStartRecording = async () => {
     setIsRecording(true);
-    
-    // Start actual speech recognition if available
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      const recognition = new SpeechRecognition();
-      recognition.lang = selectedLanguage === 'hindi' ? 'hi-IN' : 'en-IN';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setCurrentQuery(transcript);
-        handleStopRecording();
+    setCurrentQuery('');
+    setAiResponse('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      mediaStreamRef.current = stream;
+
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 16000
+      });
+      audioContextRef.current = audioContext;
+
+      const ws = new WebSocket(VOICE_WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket connection established');
       };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('Received:', data);
+        
+        if (data.type === 'partial_transcript') {
+          setCurrentQuery(data.text);
+        } else if (data.type === 'agent_response') {
+          setAiResponse(data.text);
+          // Don't auto-play browser TTS here as we'll receive agent_audio
+        } else if (data.type === 'agent_audio') {
+          // Play the audio data received from Deepgram
+          try {
+            console.log('Received agent audio data:', data.audio_data.length);
+            const audioArray = new Uint8Array(data.audio_data);
+            playAudioData(audioArray);
+          } catch (error) {
+            console.error('Error playing audio:', error);
+            
+            // Fallback to browser TTS if agent audio fails
+            if (aiResponse) {
+              const utterance = new SpeechSynthesisUtterance(aiResponse);
+              utterance.lang = selectedLanguage === 'hindi' ? 'hi-IN' : 'en-IN';
+              speechSynthesis.speak(utterance);
+            }
+          }
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        setIsRecording(false);
+      };
+
+      const source = audioContext.createMediaStreamSource(stream);
       
-      recognition.start();
+      // Create audio worklet processor
+      const audioWorkletCode = `
+        class AudioProcessor extends AudioWorkletProcessor {
+          process(inputs, outputs, parameters) {
+            const input = inputs[0];
+            if (input && input.length > 0) {
+              const inputData = input[0];
+              
+              // Convert float32 to int16 PCM
+              const pcm16Data = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                pcm16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+              }
+              
+              // Send to main thread
+              this.port.postMessage(pcm16Data.buffer);
+            }
+            return true;
+          }
+        }
+        
+        registerProcessor('audio-processor', AudioProcessor);
+      `;
+
+      // Create blob URL for the worklet
+      const blob = new Blob([audioWorkletCode], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+
+      try {
+        await audioContext.audioWorklet.addModule(workletUrl);
+        
+        const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+        workletNodeRef.current = workletNode;
+
+        // Handle messages from the worklet
+        workletNode.port.onmessage = (event) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(event.data);
+          }
+        };
+
+        source.connect(workletNode);
+        workletNode.connect(audioContext.destination);
+
+        // Clean up blob URL
+        URL.revokeObjectURL(workletUrl);
+        
+      } catch (workletError) {
+        console.warn('AudioWorklet not supported, falling back to ScriptProcessorNode:', workletError);
+        
+        // Fallback to ScriptProcessorNode for older browsers
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        processor.onaudioprocess = (event) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            const inputData = event.inputBuffer.getChannelData(0);
+            
+            // Convert float32 to int16 PCM
+            const pcm16Data = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              pcm16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+            }
+            
+            // Send binary audio data
+            ws.send(pcm16Data.buffer);
+          }
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        
+        // Store processor reference for cleanup
+        workletNodeRef.current = processor as any;
+      }
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      setIsRecording(false);
+      toast({
+        title: "Microphone Error",
+        description: "Failed to access microphone. Please check permissions.",
+        variant: "destructive"
+      });
     }
-    
-    toast({
-      title: "Recording Started",
-      description: "Speak your question clearly. We support Hindi, English, and regional languages.",
-    });
   };
 
   const handleStopRecording = () => {
     setIsRecording(false);
+
+    // Clean up audio processing
+    if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
+    }
     
-    // Simulate voice processing
-    setTimeout(() => {
-      const mockQuery = "मौसम की जानकारी चाहिए";
-      const mockResponse = "कल से 3 दिन तक हल्की बारिश की संभावना है। खेत में पानी भरने से बचने के लिए जल निकासी की व्यवस्था करें।";
-      
-      const newQuery: VoiceQuery = {
-        id: Date.now().toString(),
-        query: mockQuery,
-        response: mockResponse,
-        timestamp: new Date(),
-        language: selectedLanguage,
-        category: 'weather'
-      };
-      
-      setVoiceQueries(prev => [newQuery, ...prev]);
-      setCurrentQuery(mockQuery);
-      
-      toast({
-        title: "Query Processed",
-        description: "Voice response is ready to play",
-      });
-    }, 2000);
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
   };
 
   const handlePlayResponse = (query: VoiceQuery) => {
@@ -487,3 +671,4 @@ const VoiceSupport = ({ currentLanguage }: VoiceSupportProps) => {
 };
 
 export default VoiceSupport;
+

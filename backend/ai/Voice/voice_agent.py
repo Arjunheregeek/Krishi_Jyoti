@@ -17,8 +17,9 @@ from deepgram import (
 )
 from deepgram.clients.agent.v1.websocket.options import SettingsOptions
 
-# Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+# Load environment variables# Load environment variables
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
 
 # WAV Header Functions
 def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
