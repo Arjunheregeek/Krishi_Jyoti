@@ -171,67 +171,24 @@ const MSPSchemes = ({ currentLanguage }: MSPSchemesProps) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const generateBotResponse = (userMessage: string): string => {
-    const message = userMessage.toLowerCase();
-    
-    if (message.includes('wheat') || message.includes('गेहूं') || message.includes('గోధుమ') || message.includes('கோதுமை') || message.includes('ഗോതമ്പ്')) {
-      return currentLanguage === 'hi' 
-        ? 'गेहूं की खेती के लिए: 1) दोमट मिट्टी सबसे अच्छी है 2) नवंबर-दिसंबर में बुआई करें 3) 20-25°C तापमान आदर्श है 4) वर्तमान MSP ₹2,275 प्रति क्विंटल है। आपकी मिट्टी और जलवायु के आधार पर मैं बेहतर सुझाव दे सकता हूं।'
-        : currentLanguage === 'te'
-        ? 'గోధుమ సాగుకు: 1) లోమీ మట్టి ఉత్తమం 2) నవంబర్-డిసెంబర్‌లో విత్తనాలు వేయండి 3) 20-25°C ఉష్ణోగ్రత అనువైనది 4) ప్రస్తుత MSP ₹2,275 ప్రతి క్వింటల్. మీ మట్టి మరియు వాతావరణం ఆధారంగా నేను మెరుగైన సలహాలు ఇవ్వగలను.'
-        : currentLanguage === 'ta'
-        ? 'கோதுமை சாகுபடிக்கு: 1) களிமண் மண் சிறந்தது 2) நவம்பர்-டிசம்பரில் விதைக்கவும் 3) 20-25°C வெப்பநிலை ஏற்றது 4) தற்போதைய MSP ₹2,275 ஒரு குவிண்டலுக்கு. உங்கள் மண் மற்றும் காலநிலையின் அடிப்படையில் நான் சிறந்த பரிந்துரைகளை வழங்க முடியும்.'
-        : currentLanguage === 'ml'
-        ? 'ഗോതമ്പ് കൃഷിക്ക്: 1) കളിമണ്ണ് ഏറ്റവും നല്ലത് 2) നവംബർ-ഡിസംബറിൽ വിതയ്ക്കുക 3) 20-25°C താപനില അനുയോജ്യം 4) നിലവിലെ MSP ₹2,275 ഒരു ക്വിന്റലിന്. നിങ്ങളുടെ മണ്ണും കാലാവസ്ഥയും അടിസ്ഥാനമാക്കി എനിക്ക് മികച്ച നിർദ്ദേശങ്ങൾ നൽകാൻ കഴിയും.'
-        : 'For wheat cultivation: 1) Loamy soil is best 2) Sow in November-December 3) 20-25°C temperature is ideal 4) Current MSP is ₹2,275 per quintal. I can provide better recommendations based on your soil and climate conditions.';
+
+  // Call FastAPI backend for real crop recommendation
+  const fetchBotResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await fetch('/api/v1/crop/recommendation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          query: userMessage
+        })
+      });
+      const data = await response.json();
+      return data.response_text || data.result || 'Sorry, no recommendation found.';
+    } catch (error) {
+      return 'Sorry, there was an error connecting to the recommendation system.';
     }
-    
-    if (message.includes('rice') || message.includes('चावल') || message.includes('వరి') || message.includes('அரிசி') || message.includes('അരി')) {
-      return currentLanguage === 'hi'
-        ? 'चावल की खेती के लिए: 1) चिकनी मिट्टी आदर्श है 2) जून-जुलाई में रोपाई करें 3) 25-35°C तापमान चाहिए 4) भरपूर पानी की आवश्यकता। वर्तमान MSP ₹2,300 प्रति क्विंटल है। आपके क्षेत्र के लिए उपयुक्त किस्म सुझा सकता हूं।'
-        : currentLanguage === 'te'
-        ? 'వరి సాగుకు: 1) బంకమట్టి అనువైనది 2) జూన్-జూలైలో నాట్లు వేయండి 3) 25-35°C ఉష్ణోగ్రత అవసరం 4) ఎక్కువ నీరు కావాలి. ప్రస్తుత MSP ₹2,300 ప్రతి క్వింటల్. మీ ప్రాంతానికి అనుకూలమైన రకాన్ని సూచించగలను.'
-        : currentLanguage === 'ta'
-        ? 'அரிசி சாகுபடிக்கு: 1) களிமண் மண் ஏற்றது 2) ஜூன்-ஜூலையில் நடவு செய்யவும் 3) 25-35°C வெப்பநிலை தேவை 4) அதிக நீர் வேண்டும். தற்போதைய MSP ₹2,300 ஒரு குவிண்டலுக்கு. உங்கள் பகுதிக்கு ஏற்ற வகையை பரிந்துரைக்க முடியும்.'
-        : currentLanguage === 'ml'
-        ? 'അരി കൃഷിക്ക്: 1) കളിമണ്ണ് അനുയോജ്യം 2) ജൂൺ-ജൂലൈയിൽ നടുക 3) 25-35°C താപനില വേണം 4) ധാരാളം വെള്ളം ആവശ്യം. നിലവിലെ MSP ₹2,300 ഒരു ക്വിന്റലിന്. നിങ്ങളുടെ പ്രദേശത്തിന് അനുയോജ്യമായ ഇനം നിർദ്ദേശിക്കാം.'
-        : 'For rice cultivation: 1) Clay soil is suitable 2) Transplant in June-July 3) 25-35°C temperature needed 4) Requires abundant water. Current MSP is ₹2,300 per quintal. I can suggest suitable varieties for your region.';
-    }
-    
-    if (message.includes('soil') || message.includes('मिट्टी') || message.includes('మట్టి') || message.includes('மண்') || message.includes('മണ്ണ്')) {
-      return currentLanguage === 'hi'
-        ? 'मिट्टी विश्लेषण के लिए: 1) मिट्टी का pH स्तर जांचें 2) नाइट्रोजन, फास्फोरस, पोटाश की मात्रा देखें 3) जैविक कार्बन की जांच करें। मुझे बताएं कि आपकी मिट्टी कैसी है - काली, लाल, दोमट या बलुई?'
-        : currentLanguage === 'te'
-        ? 'మట్టి విశ్లేషణ కోసం: 1) మట్టి pH స్థాయిని తనిఖీ చేయండి 2) నత్రజని, భాస్వరం, పొటాష్ మొత్తాలను చూడండి 3) సేంద్రీయ కార్బన్ పరీక్షించండి. మీ మట్టి ఎలా ఉంది - నల్ల, ఎరుపు, లోమీ లేదా ఇసుక మట్టి అని చెప్పండి?'
-        : currentLanguage === 'ta'
-        ? 'மண் பகுப்பாய்விற்கு: 1) மண்ணின் pH அளவைச் சரிபார்க்கவும் 2) நைட்ரஜன், பாஸ்பரஸ், பொட்டாஷ் அளவுகளைப் பார்க்கவும் 3) கரிம கார்பனைச் சோதிக்கவும். உங்கள் மண் எப்படி இருக்கிறது - கருப்பு, சிவப்பு, களிமண் அல்லது மணல் மண் என்று சொல்லுங்கள்?'
-        : currentLanguage === 'ml'
-        ? 'മണ്ണ് വിശകലനത്തിന്: 1) മണ്ണിന്റെ pH നില പരിശോധിക്കുക 2) നൈട്രജൻ, ഫോസ്ഫറസ്, പൊട്ടാഷ് അളവുകൾ കാണുക 3) ജൈവ കാർബൺ പരിശോധിക്കുക. നിങ്ങളുടെ മണ്ണ് എങ്ങനെയാണ് - കറുപ്പ്, ചുവപ്പ്, കളിമണ്ണ് അല്ലെങ്കിൽ മണൽ മണ്ണ് എന്ന് പറയുക?'
-        : 'For soil analysis: 1) Check soil pH level 2) Test nitrogen, phosphorus, potash content 3) Check organic carbon. Tell me about your soil type - black, red, loamy, or sandy soil?';
-    }
-    
-    if (message.includes('profit') || message.includes('लाभ') || message.includes('లాభం') || message.includes('லாபம்') || message.includes('ലാഭം')) {
-      return currentLanguage === 'hi'
-        ? 'लाभ की गणना के लिए: 1) बीज, खाद, कीटनाशक की लागत 2) श्रम और मशीनरी खर्च 3) बाजार मूल्य और MSP की तुलना 4) प्रति एकड़ उत्पादन। मुझे बताएं कि आप कौन सी फसल उगाना चाहते हैं और कितनी जमीन है?'
-        : currentLanguage === 'te'
-        ? 'లాభం లెక్కింపు కోసం: 1) విత్తనాలు, ఎరువులు, కీటనాశకాల ఖర్చు 2) కూలీ మరియు యంత్రాల ఖర్చు 3) మార్కెట్ ధర మరియు MSP పోలిక 4) ఎకరానికి దిగుబడి. మీరు ఏ పంట పండించాలనుకుంటున్నారు మరియు ఎంత భూమి ఉంది అని చెప్పండి?'
-        : currentLanguage === 'ta'
-        ? 'லாப கணக்கீட்டிற்கு: 1) விதைகள், உரங்கள், பூச்சிக்கொல்லி செலவு 2) கூலி மற்றும் இயந்திர செலவு 3) சந்தை விலை மற்றும் MSP ஒப்பீடு 4) ஏக்கருக்கு மகசூல். நீங்கள் எந்த பயிரை வளர்க்க விரும்புகிறீர்கள் மற்றும் எவ்வளவு நிலம் உள்ளது என்று சொல்லுங்கள்?'
-        : currentLanguage === 'ml'
-        ? 'ലാഭം കണക്കാക്കാൻ: 1) വിത്തുകൾ, വളങ്ങൾ, കീടനാശിനി ചെലവ് 2) കൂലിയും യന്ത്രങ്ങളുടെ ചെലവും 3) മാർക്കറ്റ് വിലയും MSP താരതമ്യവും 4) ഏക്കറിന് വിളവ്. നിങ്ങൾ ഏത് വിള വളർത്താൻ ആഗ്രഹിക്കുന്നു, എത്ര ഭൂമിയുണ്ട് എന്ന് പറയുക?'
-        : 'For profit calculation: 1) Seeds, fertilizers, pesticide costs 2) Labor and machinery expenses 3) Market price vs MSP comparison 4) Yield per acre. Tell me which crop you want to grow and how much land you have?';
-    }
-    
-    // Default response
-    return currentLanguage === 'hi'
-      ? 'मैं फसल सिफारिशों के बारे में जानकारी प्रदान कर सकता हूं। आप मुझसे मिट्टी विश्लेषण, मौसम के अनुकूल फसलें, लाभदायक खेती, या बाजार की कीमतों के बारे में पूछ सकते हैं।'
-      : currentLanguage === 'te'
-      ? 'నేను పంట సిఫార్సుల గురించి సమాచారం అందించగలను. మట్టి విశ్లేషణ, వాతావరణానికి అనుకూలమైన పంటలు, లాభదాయకమైన వ్యవసాయం లేదా మార్కెట్ ధరల గురించి మీరు నన్ను అడగవచ్చు.'
-      : currentLanguage === 'ta'
-      ? 'நான் பயிர் பரிந்துரைகள் பற்றிய தகவல்களை வழங்க முடியும். மண் பகுப்பாய்வு, காலநிலைக்கு ஏற்ற பயிர்கள், லாபகரமான விவசாயம் அல்லது சந்தை விலைகள் பற்றி என்னிடம் கேட்கலாம்.'
-      : currentLanguage === 'ml'
-      ? 'എനിക്ക് വിള ശുപാർശകളെക്കുറിച്ചുള്ള വിവരങ്ങൾ നൽകാൻ കഴിയും. മണ്ണ് വിശകലനം, കാലാവസ്ഥയ്ക്ക് അനുയോജ്യമായ വിളകൾ, ലാഭകരമായ കൃഷി അല്ലെങ്കിൽ മാർക്കറ്റ് വിലകളെക്കുറിച്ച് നിങ്ങൾക്ക് എന്നോട് ചോദിക്കാം.'
-      : 'I can provide information about crop recommendations. You can ask me about soil analysis, climate-suitable crops, profitable farming, or market prices.';
   };
 
   const handleSendMessage = async () => {
@@ -249,18 +206,17 @@ const MSPSchemes = ({ currentLanguage }: MSPSchemesProps) => {
     setInputMessage('');
     setIsTyping(true);
 
-    // Simulate bot response delay
-    setTimeout(() => {
-      const botResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        text: generateBotResponse(inputMessage),
-        sender: 'bot',
-        timestamp: new Date(),
-        type: 'text'
-      };
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-    }, 1500);
+    // Call backend for real bot response
+    const botText = await fetchBotResponse(inputMessage);
+    const botResponse: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      text: botText,
+      sender: 'bot',
+      timestamp: new Date(),
+      type: 'text'
+    };
+    setMessages(prev => [...prev, botResponse]);
+    setIsTyping(false);
   };
 
   const handleQuickAction = (action: string) => {

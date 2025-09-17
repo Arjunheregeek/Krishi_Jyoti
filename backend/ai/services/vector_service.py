@@ -26,11 +26,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from llama_index.core import VectorStoreIndex, Settings
-from llama_index.vector_stores.milvus import MilvusVectorStore
+# from llama_index.vector_stores import MilvusVectorStore
 from llama_index.core.schema import NodeWithScore
 from llama_index.embeddings.openai import OpenAIEmbedding
 from pymilvus import MilvusClient
 from pymilvus.exceptions import MilvusException
+from llama_index.vector_stores.milvus import MilvusVectorStore
 
 # Suppress verbose logging for performance
 logging.getLogger("httpx").setLevel(logging.WARNING)

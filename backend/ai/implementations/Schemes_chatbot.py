@@ -13,7 +13,7 @@ logging.getLogger("cerebras.cloud.sdk").setLevel(logging.WARNING)
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Import the RAG service
-from schemes_rag import create_rag_service
+from .schemes_rag import create_rag_service
 
 # Load environment variables from parent directory
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))

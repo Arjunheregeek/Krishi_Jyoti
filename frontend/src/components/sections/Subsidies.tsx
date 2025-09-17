@@ -228,43 +228,24 @@ const Subsidies = ({ currentLanguage }: SubsidiesProps) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const generateBotResponse = (userMessage: string): string => {
-    const message = userMessage.toLowerCase();
-    
-    if (message.includes('pesticide') || message.includes('कीटनाशक') || message.includes('పురుగుమందు')) {
-      const info = subsidyData.pesticide;
-      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.${info.deadline ? ` Deadline: ${info.deadline}` : ''}`;
+
+  // Call FastAPI backend for real subsidy chatbot response
+  const fetchBotResponse = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await fetch('/api/v1/schemes/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          query: userMessage
+        })
+      });
+      const data = await response.json();
+      return data.response_text || 'Sorry, no subsidy information found.';
+    } catch (error) {
+      return 'Sorry, there was an error connecting to the subsidy information system.';
     }
-    
-    if (message.includes('fertilizer') || message.includes('उर्वरक') || message.includes('ఎరువు')) {
-      const info = subsidyData.fertilizer;
-      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
-    }
-    
-    if (message.includes('seed') || message.includes('बीज') || message.includes('విత్తన')) {
-      const info = subsidyData.seeds;
-      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
-    }
-    
-    if (message.includes('equipment') || message.includes('उपकरण') || message.includes('పరికరం')) {
-      const info = subsidyData.equipment;
-      return `${info.name}: ${info.amount}. Eligibility: ${info.eligibility.join(', ')}. Required documents: ${info.documents.join(', ')}.`;
-    }
-    
-    if (message.includes('eligibility') || message.includes('पात्रता') || message.includes('అర్హత')) {
-      return 'To check your eligibility for subsidies, I need to know: 1) Your farmer category (Small/Marginal/Large), 2) Land ownership details, 3) Type of subsidy you\'re interested in. Please provide these details.';
-    }
-    
-    if (message.includes('apply') || message.includes('आवेदन') || message.includes('దరఖాస్తు')) {
-      return 'To apply for subsidies: 1) Visit your nearest agriculture office or apply online, 2) Submit required documents, 3) Fill the application form, 4) Wait for verification, 5) Receive approval and benefits. Processing time is usually 15-30 days.';
-    }
-    
-    if (message.includes('calculate') || message.includes('गणना') || message.includes('లెక్కింపు')) {
-      return 'To calculate your subsidy benefits, please tell me: 1) Type of subsidy (pesticide/fertilizer/seeds/equipment), 2) Your investment amount, 3) Your farmer category. I\'ll calculate the exact subsidy amount you\'re eligible for.';
-    }
-    
-    // Default response
-    return 'I can help you with information about government subsidies including pesticide, fertilizer, seeds, and equipment subsidies. You can ask about eligibility criteria, application process, required documents, or calculate potential benefits. What specific information do you need?';
   };
 
   const handleSendMessage = async () => {
@@ -282,18 +263,17 @@ const Subsidies = ({ currentLanguage }: SubsidiesProps) => {
     setInputMessage('');
     setIsTyping(true);
 
-    // Simulate bot response delay
-    setTimeout(() => {
-      const botResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        text: generateBotResponse(inputMessage),
-        sender: 'bot',
-        timestamp: new Date(),
-        type: 'text'
-      };
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-    }, 1500);
+    // Call backend for real bot response
+    const botText = await fetchBotResponse(inputMessage);
+    const botResponse: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      text: botText,
+      sender: 'bot',
+      timestamp: new Date(),
+      type: 'text'
+    };
+    setMessages(prev => [...prev, botResponse]);
+    setIsTyping(false);
   };
 
   const handleQuickAction = (action: string) => {
