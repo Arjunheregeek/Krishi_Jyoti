@@ -119,12 +119,18 @@ const Header = ({ currentLanguage, onLanguageChange, activeSection, onSectionCha
           >
             {t.subsidies}
           </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => onSectionChange('disease-detection')}
+          <Button
+            variant="ghost"
+            asChild
             className={`text-sm font-medium transition-colors ${activeSection === 'disease-detection' ? 'text-primary' : ''}`}
           >
-            {t.diseaseDetection}
+            <a
+              href="https://huggingface.co/spaces/ShreyaGupta90/CropDiseaseIdentify"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t.diseaseDetection}
+            </a>
           </Button>
           <Button 
             variant="ghost" 

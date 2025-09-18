@@ -2,208 +2,250 @@ import os
 import sys
 import logging
 from pathlib import Path
-project_root = Path(__file__).resolve()
-while not (project_root / "backend").exists() and project_root != project_root.parent:
-    project_root = project_root.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-from dotenv import load_dotenv
+import json
 import pickle
 import numpy as np
 import re
+from datetime import datetime
 
-from backend.api.Wheather.demo_weather import get_weather
+# --- Robust Project Root Setup ---
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from dotenv import load_dotenv
 from cerebras.cloud.sdk import Cerebras
-import json
 
-# Suppress verbose logging from external libraries
+# Ensure this points to your most capable weather function
+from backend.api.Wheather.wheatherapi import get_agricultural_weather
+
+# --- Configuration ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.getLogger("httpx").setLevel(logging.WARNING)
+load_dotenv(project_root / '.env')
 
-# Load environment variables from parent directory
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class CropChatBot:
-    """Crop Recommendation ChatBot with weather and LLM enhancement"""
+    """
+    ## FINAL VERSION ##
+    A robust, stateful Crop Recommendation ChatBot with an LLM-powered data pipeline,
+    API failure fallback, and a final validation layer to ensure recommendations are logical.
+    This version does not use hardcoded average values.
+    """
 
     def __init__(self):
-        # Load ML model
+        """Initializes the chatbot, loads the ML model, and sets up state."""
+        print("Initializing Krishi Mitra...")
         self.llm_client = Cerebras(api_key=os.environ.get("CEREBRAS_API_KEY_2"))
-        model_path = project_root / "backend" / "ml" / "models" / "crop_recommendation_model.pkl"
+
+        # Corrected file path for the ML model
+        model_path = project_root.parent /"ml" / "models" / "crop_recommendation_model.pkl"
         try:
             with open(model_path, 'rb') as file:
                 self.model = pickle.load(file)
-            print("✅ Crop model loaded successfully!")
+            print("✅ Crop recommendation model loaded successfully!")
         except FileNotFoundError:
-            print(f"🚨 Error: Model file not found at {model_path}.")
+            print(f"🚨 FATAL ERROR: Model file not found at {model_path}.")
             exit()
-        self.avg_values = [50.55, 53.36, 48.15, 25.62, 71.48, 7.0, 103.46]
-        self.conversation_history = []
+
+        self.conversation_state = {}
         self.system_prompt = (
             "You are 'Krishi Mitra', an expert AI assistant for Indian farmers. "
             "You recommend the best crops based on soil, weather, and user needs. "
-            "Always explain your reasoning in simple language."
+            "Always explain your reasoning in simple, clear language. Be friendly and supportive."
         )
 
-    def add_to_history(self, role, content):
-        self.conversation_history.append({"role": role, "content": content})
-        if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
+    # --- Core LLM-Powered Data Functions ---
 
-    def parse_user_input(self, user_input):
-        # Let LLM extract location and crop from user input
-        import json
+    def llm_estimate_weather_and_soil(self, city):
+        """Fallback: Estimates all model inputs if the Weather API fails."""
+        current_date = datetime.now().strftime("%B %d, %Y")
         prompt = (
-            f"Extract the location (city, district, or region in India) and the crop the user wants to grow from this message: '{user_input}'. "
-            "Respond ONLY with a JSON object in the format: {\"location\": location_string, \"crop\": crop_string}. "
-            "If location or crop is not found, use 'Unknown'."
+            f"You are an expert agri-scientist. It is {current_date}. "
+            f"For '{city}, India', our weather API is down. Please estimate typical values for: "
+            f"N, P, K (kg/ha), soil pH, temperature (°C), humidity (%), and weekly rainfall (mm). "
+            "Respond ONLY with a valid JSON object: "
+            "{\"N\": v, \"P\": v, \"K\": v, \"pH\": v, \"temperature\": v, \"humidity\": v, \"rainfall\": v}"
         )
-        messages = [
-            {"role": "system", "content": "You are an expert agri assistant for Indian farmers."},
-            {"role": "user", "content": prompt}
-        ]
         response = self.llm_client.chat.completions.create(
-            messages=messages,
-            model="llama-4-scout-17b-16e-instruct",
-            temperature=0.2,
-            max_tokens=100
+            messages=[{"role": "user", "content": prompt}], model="llama-4-scout-17b-16e-instruct", temperature=0.4
+        )
+        raw_response_text = response.choices[0].message.content
+        try:
+            json_match = re.search(r'\{.*\}', raw_response_text, re.DOTALL)
+            return json.loads(json_match.group(0)) if json_match else None
+        except Exception:
+            logging.error(f"LLM estimation fallback failed for {city}. Raw response: '{raw_response_text}'")
+            return None
+
+    def llm_parse_weather_and_soil(self, city, weather_data):
+        """Primary: Estimates soil and parses real weather data."""
+        prompt = (
+            f"For {city}, using this agricultural weather data: {json.dumps(weather_data)}\n"
+            "1. Estimate typical soil nutrients (N, P, K, pH).\n"
+            "2. Extract temperature and humidity from 'current_conditions'.\n"
+            "3. Use 'weekly_outlook.total_precipitation' for rainfall.\n"
+            "Respond ONLY with a JSON object: "
+            '{"N": v, "P": v, "K": v, "pH": v, "temperature": v, "humidity": v, "rainfall": v}'
+        )
+        response = self.llm_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are an expert agri-scientist."},
+                {"role": "user", "content": prompt}
+            ], model="llama-4-scout-17b-16e-instruct", temperature=0.3
+        )
+        raw_response_text = response.choices[0].message.content
+        try:
+            json_match = re.search(r'\{.*\}', raw_response_text, re.DOTALL)
+            return json.loads(json_match.group(0)) if json_match else None
+        except Exception:
+            logging.error(f"LLM parsing failed for {city}. Raw response: '{raw_response_text}'")
+            return None
+
+    # --- Intent, Validation, and Enhancement Functions ---
+
+    def classify_intent(self, user_message):
+        """Acts as a router to classify user intent."""
+        # This function remains the same as before
+        context = f"The user has already asked about the location: {self.conversation_state['city']}." if self.conversation_state.get('city') else ""
+        prompt = (
+            f"Classify user intent. Context: '{context}'.\nUser message: '{user_message}'\n\n"
+            "Intents: 'greeting', 'new_crop_recommendation', 'follow_up_recommendation', 'general_query'.\n"
+            "If intent is 'new_crop_recommendation', extract 'location'. If 'follow_up_recommendation', extract 'crop'.\n"
+            "Respond ONLY with JSON: {\"intent\": \"...\", \"location\": \"...\", \"crop\": \"...\"}"
+        )
+        response = self.llm_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}], model="llama-4-scout-17b-16e-instruct", temperature=0.1, max_tokens=150
         )
         try:
-            parsed = json.loads(response.choices[0].message.content)
-            city = parsed.get("location", "Pune")
-            crop = parsed.get("crop", "Unknown")
+            return json.loads(response.choices[0].message.content)
         except Exception:
-            city = "Pune"
-            crop = "Unknown"
-        weather = get_weather(city=city)
-        # Use LLM to parse weather and generate model input (N, P, K, pH, temp, humidity, rainfall)
-        model_input = self.llm_parse_weather_and_soil(city, weather)
-        model_input["crop"] = crop
-        return city, model_input
+            return {"intent": "general_query", "location": None, "crop": None}
 
-    def llm_parse_weather_and_soil(self, city, weather):
-        import json
+    def validate_recommendations(self, city, top_crops_list):
+        """Validation Layer: Checks if ML model's suggestions are geographically logical."""
         prompt = (
-            f"Given the following weather data for {city}, India: {json.dumps(weather)}\n"
-            "Estimate and return a JSON object with these fields for crop recommendation: "
-            "N, P, K (kg/ha), pH, temperature (C), humidity (%), rainfall (mm). "
-            "Respond ONLY with a JSON object in this format: "
-            "{\"N\": value, \"P\": value, \"K\": value, \"pH\": value, \"temperature\": value, \"humidity\": value, \"rainfall\": value}"
+            f"You are an expert agronomist. For '{city}, India', an ML model suggested: {top_crops_list}. "
+            "Is each crop 'Suitable' or 'Unsuitable' for that climate? "
+            "Respond ONLY with a JSON object. Example: {\"wheat\": \"Suitable\", \"papaya\": \"Unsuitable\"}"
         )
-        messages = [
-            {"role": "system", "content": "You are an expert agri scientist and weather analyst for Indian agriculture."},
-            {"role": "user", "content": prompt}
-        ]
         response = self.llm_client.chat.completions.create(
-            messages=messages,
-            model="llama-4-scout-17b-16e-instruct",
-            temperature=0.3,
-            max_tokens=300
+            messages=[{"role": "user", "content": prompt}], model="llama-4-scout-17b-16e-instruct", temperature=0.0
         )
-        # Try to parse JSON from LLM response
         try:
-            model_input = json.loads(response.choices[0].message.content)
+            results = json.loads(response.choices[0].message.content)
+            return [crop for crop, status in results.items() if status.lower() == 'suitable']
         except Exception:
-            # Fallback to average values if parsing fails
-            model_input = {
-                "N": self.avg_values[0], "P": self.avg_values[1], "K": self.avg_values[2],
-                "pH": self.avg_values[5], "temperature": self.avg_values[3],
-                "humidity": self.avg_values[4], "rainfall": self.avg_values[6]
-            }
-        # Fill missing values with averages
-        model_input.setdefault("N", self.avg_values[0])
-        model_input.setdefault("P", self.avg_values[1])
-        model_input.setdefault("K", self.avg_values[2])
-        model_input.setdefault("pH", self.avg_values[5])
-        model_input.setdefault("temperature", self.avg_values[3])
-        model_input.setdefault("humidity", self.avg_values[4])
-        model_input.setdefault("rainfall", self.avg_values[6])
-        return model_input
+            logging.warning(f"Validation step failed for {city}. Proceeding with ML model output.")
+            return top_crops_list # Failsafe: if validation breaks, trust the model
 
-    def estimate_soil_nutrients_llm(self, city):
+    def llm_enhance(self, user_input, top_crops_list, details):
+        """Creates the final user-facing report."""
+        # This function remains the same as the improved version
         prompt = (
-            f"Estimate typical soil nutrient values (N, P, K in kg/ha and pH) for agricultural land in {city}, India. "
-            "Respond ONLY with a JSON object in the format: {\"N\": value, \"P\": value, \"K\": value, \"pH\": value}"
+            f"A farmer in {details.get('city', 'this area')} asked: '{user_input}'\n"
+            f"Our top recommendations are: {', '.join(top_crops_list)}.\n"
+            f"Data summary: {json.dumps(details, indent=2)}\n\n"
+            "As 'Krishi Mitra', please write a friendly, structured report with:\n"
+            "1. A warm greeting.\n"
+            f"2. A clear explanation for the #1 crop: {top_crops_list[0]}.\n"
+            "3. The other crops as good alternatives.\n"
+            "4. An 'Actionable Advisory' section if farm risk data is available.\n"
+            "5. A friendly tip."
         )
-        messages = [
-            {"role": "system", "content": "You are an expert soil scientist for Indian agriculture."},
-            {"role": "user", "content": prompt}
-        ]
         response = self.llm_client.chat.completions.create(
-            messages=messages,
-            model="llama-4-scout-17b-16e-instruct",
-            temperature=0.3,
-            max_tokens=200
-        )
-        # Try to parse JSON from LLM response
-        try:
-            soil = json.loads(response.choices[0].message.content)
-        except Exception:
-            # Fallback to average values if parsing fails
-            soil = {"N": self.avg_values[0], "P": self.avg_values[1], "K": self.avg_values[2], "pH": self.avg_values[5]}
-        # Fill missing values with averages
-        soil.setdefault("N", self.avg_values[0])
-        soil.setdefault("P", self.avg_values[1])
-        soil.setdefault("K", self.avg_values[2])
-        soil.setdefault("pH", self.avg_values[5])
-        return soil
-
-    def get_model_input(self, model_input):
-        # Accepts a single dict with all required fields
-        required = ["N", "P", "K", "pH", "temperature", "humidity", "rainfall"]
-        missing = [key for key in required if key not in model_input]
-        if missing:
-            raise ValueError(f"Missing required input(s) for model: {', '.join(missing)}")
-        return np.array([[model_input["N"], model_input["P"], model_input["K"], model_input["temperature"], model_input["humidity"], model_input["pH"], model_input["rainfall"]]])
-
-
-    def llm_enhance(self, user_input, model_output, details):
-        prompt = f"User Input: {user_input}\nModel Output: {model_output}\nDetails: {details}"
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": prompt}
-        ]
-        response = self.llm_client.chat.completions.create(
-            messages=messages,
-            model="llama-4-scout-17b-16e-instruct",  # or your chosen model
-            temperature=0.7,
-            max_tokens=600
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": prompt}
+            ], model="llama-4-scout-17b-16e-instruct", temperature=0.7, max_tokens=700
         )
         return response.choices[0].message.content
 
+    # --- Main Logic ---
+
+    def get_model_input(self, model_input_dict):
+        """Prepares the NumPy array for the ML model."""
+        feature_order = ["N", "P", "K", "temperature", "humidity", "pH", "rainfall"]
+        ordered_values = [model_input_dict[feature] for feature in feature_order]
+        return np.array([ordered_values])
+
     def get_response(self, user_message):
-        try:
-            city, model_input = self.parse_user_input(user_message)
-            model_input_arr = self.get_model_input(model_input)
-            prediction = self.model.predict(model_input_arr)[0]
-            details = {**model_input, "city": city}
-            enhanced = self.llm_enhance(user_message, prediction, details)
-            self.add_to_history("user", user_message)
-            self.add_to_history("assistant", enhanced)
-            return enhanced
-        except Exception as e:
-            return f"❌ Error: {str(e)}"
+        """Main response generator with integrated API fallback and validation."""
+        classified_data = self.classify_intent(user_message)
+        intent = classified_data.get("intent")
+
+        if intent == "greeting":
+            return "Hello! How can I help you with your farm planning today?"
+
+        elif intent == "new_crop_recommendation":
+            try:
+                city = classified_data.get("location")
+                if not city or city.lower() == 'unknown':
+                    return "Of course, I can help. Please tell me your location (e.g., 'what to grow in Pune?')."
+
+                logging.info(f"Executing new recommendation for: {city}")
+                
+                # Step 1: Try to get real data from the Weather API
+                agri_weather = get_agricultural_weather(city=city)
+                details = {}
+                model_input_data = None
+                
+                if "error" in agri_weather:
+                    logging.warning(f"Weather API failed for {city}. Using LLM estimation as fallback.")
+                    model_input_data = self.llm_estimate_weather_and_soil(city)
+                    details = {"city": city, "data_source": "LLM Estimation", **(model_input_data or {})}
+                else:
+                    logging.info(f"Weather API successful for {city}.")
+                    model_input_data = self.llm_parse_weather_and_soil(city, agri_weather)
+                    details = {"city": city, "data_source": "API", **(model_input_data or {}), **agri_weather}
+
+                if model_input_data is None:
+                    return "I'm sorry, I'm having trouble gathering the necessary data for your location. Please try again later."
+                
+                # Step 2: Get Top 3 Predictions from ML Model
+                model_input_arr = self.get_model_input(model_input_data)
+                probabilities = self.model.predict_proba(model_input_arr)[0]
+                crop_probs = sorted(zip(self.model.classes_, probabilities), key=lambda x: x[1], reverse=True)
+                ml_top_3_crops = [crop for crop, prob in crop_probs[:3]]
+
+                # Step 3: Validate the Recommendations
+                suitable_crops = self.validate_recommendations(city, ml_top_3_crops)
+
+                if not suitable_crops:
+                    logging.warning(f"ML recommendations {ml_top_3_crops} rejected for {city}. Using LLM as final fallback.")
+                    # Handle case where all ML suggestions are unsuitable
+                    return self.llm_enhance(user_message, [], details) # Let llm_enhance handle this scenario
+
+                self.conversation_state = details
+                return self.llm_enhance(user_message, suitable_crops, details)
+
+            except Exception as e:
+                logging.error(f"Critical error in 'new_crop_recommendation': {e}", exc_info=True)
+                return f"❌ I encountered an unexpected error. Please try again."
+
+        # (Other intents like 'follow_up_recommendation' and 'general_query' would go here)
+        else:
+            return "I'm here to help with your farming questions! Ask me about crop recommendations."
 
     def start_chat(self):
-        print("🌾 Krishi Mitra Crop Recommendation ChatBot")
+        """Starts the interactive command-line interface."""
+        # This function remains the same
+        print("\n🌾 Krishi Mitra Crop Recommendation ChatBot")
         print("=" * 50)
-        print("Ask me about the best crops for your farm!")
-        print("Type 'quit', 'exit', or 'bye' to end the conversation.")
+        print("Ask me for a crop recommendation (e.g., 'What should I plant in Aurangabad?')")
+        print("Type 'quit' or 'exit' to end.")
         print("=" * 50)
         while True:
             try:
                 user_input = input("\n👤 You: ").strip()
                 if user_input.lower() in ['quit', 'exit', 'bye', 'q']:
-                    print("\n👋 Thank you for using Krishi Mitra!")
+                    print("\n👋 Thank you for using Krishi Mitra! Happy farming!")
                     break
-                if not user_input:
-                    continue
+                if not user_input: continue
                 print("\n🤖 Assistant: ", end="", flush=True)
                 response = self.get_response(user_input)
                 print(response)
-            except KeyboardInterrupt:
-                print("\n\n👋 Goodbye!")
-                break
-            except EOFError:
+            except (KeyboardInterrupt, EOFError):
                 print("\n\n👋 Goodbye!")
                 break
 
