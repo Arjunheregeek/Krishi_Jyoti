@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Form
 from typing import Optional, List
 import sys
 import os
@@ -242,44 +242,18 @@ async def get_fertilizer_subsidies(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/query", response_model=QueryResponse)
-async def ask_scheme_question(
-    question: str,
-    farmer_name: Optional[str] = None,
-    phone: Optional[str] = None,
-    location: Optional[str] = None,
-    language: Language = Language.MALAYALAM
-):
-    """Ask questions about government schemes and get AI-powered responses."""
+
+
+# Import the real chatbot implementation
+from ai.implementations.Schemes_chatbot import SchemesChatBot
+
+
+@router.post("/query")
+async def ask_scheme_question(query: str = Form(...)):
+    """Ask questions about government schemes and get AI-powered responses from SchemesChatBot."""
     try:
-        # TODO: Process through AI model for scheme-related queries
-        query_data = QueryCreate(
-            query_text=f"Government scheme query: {question}",
-            query_type=QueryType.TEXT,
-            language=language,
-            farmer_name=farmer_name,
-            phone=phone,
-            location=location
-        )
-        
-        # This would integrate with your QueryService
-        # result = await QueryService.create_query(query_data)
-        
-        # Mock response for now
-        mock_result = {
-            "id": "scheme_query_123",
-            "query_text": query_data.query_text,
-            "query_type": query_data.query_type.value,
-            "language": query_data.language.value,
-            "farmer_name": farmer_name,
-            "phone": phone,
-            "location": location,
-            "status": "completed",
-            "response_text": f"Based on your question about '{question}', here are relevant schemes and information. This would be processed by AI in production.",
-            "confidence_score": 0.85,
-            "created_at": "2024-09-10T10:00:00Z"
-        }
-        
-        return QueryResponse(**mock_result)
+        chatbot = SchemesChatBot()
+        response_text = chatbot.get_response(query)
+        return {"response_text": response_text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

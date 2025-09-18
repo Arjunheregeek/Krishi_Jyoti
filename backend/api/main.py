@@ -7,7 +7,8 @@ import sys
 import os
 
 # Add current directory to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from routers import queries_router, feedback_router, escalation_router, health_router, crop_router, schemes_router, voice_ws_router
 
