@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from cerebras.cloud.sdk import Cerebras
 
 # Ensure this points to your most capable weather function
-from backend.api.Wheather.wheatherapi import get_agricultural_weather
+from .wheatherapi import get_agricultural_weather
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
